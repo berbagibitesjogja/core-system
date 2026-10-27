@@ -1,0 +1,51 @@
+# Go binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+main
+app
+
+# Build output
+/bin/
+/build/
+/dist/
+
+# Air
+tmp/
+
+# Go workspace
+go.work
+go.work.sum
+
+# Vendor
+/vendor/
+
+# Coverage
+coverage.out
+coverage.html
+*.coverprofile
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Zed
+.zed/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor swap/temp files
+*.swp
+*.swo
+*.tmp
+*.temp
+
+# Notes
+afif/

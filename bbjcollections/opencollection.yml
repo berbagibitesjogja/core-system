@@ -1,0 +1,101 @@
+opencollection: 1.0.0
+
+info:
+  name: bbjcollections
+config:
+  proxy:
+    inherit: true
+    config:
+      protocol: http
+      hostname: ""
+      port: ""
+      auth:
+        username: ""
+        password: ""
+      bypassProxy: ""
+
+request:
+  scripts:
+    - type: before-request
+      code: |-
+        function parseJwt(tokenStr) {
+          try {
+            if (!tokenStr) return null;
+            let base64Url = tokenStr.split('.')[1];
+            if (!base64Url) return null;
+
+            let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            while (base64.length % 4) {
+              base64 += '=';
+            }
+
+            const jsonPayload = decodeURIComponent(
+              atob(base64)
+                .split('')
+                .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                .join('')
+            );
+            return JSON.parse(jsonPayload);
+          } catch (e) {
+            console.error("JWT parse failed:", e.message);
+            return null;
+          }
+        }
+
+        let token = bru.getEnvVar("accessToken") || bru.getVar("accessToken");
+        let refreshToken = bru.getEnvVar("refreshToken") || bru.getVar("refreshToken");
+
+        const reqUrl = req.getUrl() || "";
+        const isAuthEndpoint = reqUrl.includes("/login") ||
+                               reqUrl.includes("/register") ||
+                               reqUrl.includes("/refresh");
+
+        if (!isAuthEndpoint && token && refreshToken) {
+          const payload = parseJwt(token);
+          const now = Math.floor(Date.now() / 1000);
+
+          if (!payload || !payload.exp || (payload.exp - now < 60)) {
+            console.log("Token expired or expiring soon. Attempting auto-refresh...");
+            const axios = require("axios");
+
+            const rawBaseUrl = bru.getEnvVar("base_url") || bru.getEnvVar("baseUrl") || "http://localhost:8080/api/v1";
+            const cleanBaseUrl = rawBaseUrl.replace(/\/+$/, '');
+
+            const refreshUrl = `${cleanBaseUrl}/refresh`;
+
+            try {
+              const response = await axios.post(refreshUrl, {
+                refresh_token: refreshToken
+              });
+
+              const newTokens = response.data?.data;
+
+              if (newTokens?.access_token) {
+                token = newTokens.access_token;
+                bru.setVar("accessToken", token);
+                try { bru.setEnvVar("accessToken", token); } catch (e) {}
+              }
+
+              if (newTokens?.refresh_token) {
+                refreshToken = newTokens.refresh_token;
+                bru.setVar("refreshToken", refreshToken);
+                try { bru.setEnvVar("refreshToken", refreshToken); } catch (e) {}
+              }
+
+              console.log("Token auto-refreshed successfully!");
+            } catch (err) {
+              console.error("Auto-refresh failed on:", refreshUrl);
+              console.error("Response:", err.response?.status, err.response?.data || err.message);
+            }
+          }
+        }
+
+        if (!isAuthEndpoint && token) {
+          req.setHeader("Authorization", `Bearer ${token}`);
+        }
+bundled: false
+extensions:
+  bruno:
+    ignore:
+      - node_modules
+      - .git

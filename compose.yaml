@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: docker.io/library/postgres:18
+    container_name: bbj_pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: bbj_database
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - bbj_data:/var/lib/postgresql:Z
+
+  rustfs:
+    image: docker.io/rustfs/rustfs:1.0.0
+    container_name: bbj_fs
+    restart: unless-stopped
+    environment:
+      - RUSTFS_ADDRESS=0.0.0.0:9000
+      - RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001
+      - RUSTFS_ACCESS_KEY=rustfsadmin
+      - RUSTFS_SECRET_KEY=rustfsadmin
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - bbjfs_data:/data
+      - logs:/app/logs
+
+  mailpit:
+    image: axllent/mailpit:v1.31.0
+    container_name: bbj_mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    volumes:
+      - bbj_mailpit_data:/data
+    environment:
+      MP_MAX_MESSAGES: 5000
+      MP_DATABASE: /data/mailpit.db
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+
+volumes:
+  bbj_data:
+  bbjfs_data:
+  logs:
+  bbj_mailpit_data:

@@ -1,0 +1,67 @@
+services:
+  app:
+    image: ghcr.io/berbagibitesjogja/core-system:latest
+    container_name: core_system
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    ports:
+      - "127.0.0.1:8080:8080"
+    logging:
+      driver: "k8s-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  postgres:
+    image: docker.io/library/postgres:18
+    container_name: bbj_pg
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "127.0.0.1:5430:5432"
+    volumes:
+      - bbj_data:/var/lib/postgresql:Z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "k8s-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  rustfs:
+    image: docker.io/rustfs/rustfs:1.0.0
+    container_name: bbj_fs
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      - RUSTFS_ADDRESS=0.0.0.0:9000
+      - RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001
+      - RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY}
+      - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "0.0.0.0:9001:9001"
+    volumes:
+      - bbjfs_data:/data:Z
+      - logs:/app/logs:Z
+    logging:
+      driver: "k8s-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+volumes:
+  bbj_data:
+  bbjfs_data:
+  logs:
