@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Invitation to Join Berbagi Bites Jogja</title>
+</head>
+<body style="max-width: 600px; margin: 0 auto; padding: 20px; font-family: sans-serif; color: #333;">
+  <h2>Halo, {{ .RecipientName }}</h2>
+  <p>{{ .InviterName }} has invited you to join the <strong>Berbagi Bites Jogja</strong> team as <strong>{{ .Role }}</strong> in the <strong>{{ .DivisionName }}</strong> division.</p>
+  <p>Please click the button below to complete your registration and set your account password:</p>
+  <div style="padding: 20px 0; text-align: center; margin: 25px 0;">
+    <a href="{{ .InviteLink }}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Complete Registration</a>
+  </div>
+  <p style="font-size: 14px; color: #666;">Or copy and paste this link into your browser:</p>
+  <p style="font-size: 13px; word-break: break-all; color: #2563eb;">{{ .InviteLink }}</p>
+  <p style="font-size: 14px; color: #666;">This invitation will expire in {{ .ExpiryHours }} hours. If you were not expecting this invitation, you can safely ignore this email.</p>
+  <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" />
+  <p style="font-size: 12px; text-align: center; color: #999; margin: 0;">&copy; 2026 Berbagi Bites Jogja. All rights reserved.</p>
+</body>
+</html>

@@ -1,0 +1,121 @@
+info:
+  name: Login
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{base_url}}/auth/login"
+  body:
+    type: json
+    data: |-
+      {
+        "email": "it@berbagibitesjogja.com",
+        "password": "password"
+      }
+      // {
+      //   "email": max 255
+      //   "password": unlimited
+      // }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: after-response
+      code: |-
+        const body = res.getBody();
+
+        if (body && body.data) {
+          const token = body.data.access_token;
+          const refresh = body.data.refresh_token;
+
+          if (token) {
+            bru.setVar("accessToken", token);
+            try {
+              bru.setEnvVar("accessToken", token);
+            } catch (e) {}
+          }
+
+          if (refresh) {
+            bru.setVar("refreshToken", refresh);
+            try {
+              bru.setEnvVar("refreshToken", refresh);
+            } catch (e) {}
+          }
+
+          console.log("Token successfully stored!");
+        }
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: "200"
+    request:
+      url: "{{base_url}}/auth/login"
+      method: POST
+      body:
+        type: json
+        data: |-
+          {
+            "email": "it@berbagibitesjogja.com",
+            "password": "password"
+          }
+          // {
+          //   "email": max 255
+          //   "password": unlimited
+          // }
+    response:
+      status: 200
+      statusText: OK
+      headers:
+        - name: access-control-allow-headers
+          value: Content-Type, Authorization, X-Requested-With, Accept, Origin
+        - name: access-control-allow-methods
+          value: GET, POST, PUT, PATCH, DELETE, OPTIONS
+        - name: access-control-allow-origin
+          value: "*"
+        - name: access-control-expose-headers
+          value: Content-Length, Content-Type
+        - name: access-control-max-age
+          value: "86400"
+        - name: content-type
+          value: application/json; charset=utf-8
+        - name: referrer-policy
+          value: strict-origin-when-cross-origin
+        - name: x-content-type-options
+          value: nosniff
+        - name: x-frame-options
+          value: DENY
+        - name: x-request-id
+          value: ref_6bac88dd
+        - name: x-xss-protection
+          value: 1; mode=block
+        - name: date
+          value: Sat, 31 Oct 2026 01:36:35 GMT
+        - name: content-length
+          value: "700"
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "Login successful",
+            "data": {
+              "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIiwiZW1haWwiOiJpdEBiZXJiYWdpYml0ZXNqb2dqYS5jb20iLCJyb2xlIjoic3VwZXIiLCJkaXZpc2lvbl9pZCI6MSwic3ViIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIiwiZXhwIjoxNzkzNDExNDk1LCJpYXQiOjE3OTM0MTA1OTV9.UcWy63LNf49b2Ez8NBRoeUG8XsV7awULl4_ZB3lHvU4",
+              "refresh_token": "89e658edd826c87f145ca5ff3df2aefe93922976516c68e623d5337597040390",
+              "expires_in": 900,
+              "user": {
+                "id": "00000000-0000-0000-0000-000000000001",
+                "email": "it@berbagibitesjogja.com",
+                "role": "super",
+                "division_id": 1,
+                "name": "Tim IT",
+                "phone_number": "620000000001",
+                "is_active": true
+              }
+            }
+          }

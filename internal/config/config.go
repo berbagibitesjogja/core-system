@@ -50,6 +50,7 @@ type AppConfig struct {
 	DefaultLimit     int
 	MaxLimit         int
 	DefaultCurrency  string
+	FrontendURL      string
 }
 
 type StorageConfig struct {
@@ -121,6 +122,7 @@ func LoadConfig() Config {
 			DefaultLimit:     getEnvAsInt("PAGINATION_DEFAULT_LIMIT", 20),
 			MaxLimit:         getEnvAsInt("PAGINATION_MAX_LIMIT", 100),
 			DefaultCurrency:  getEnv("DEFAULT_CURRENCY", "IDR"),
+			FrontendURL:      getEnvWithFallback([]string{"FRONTEND_URL", "APP_FRONTEND_URL"}, "http://localhost:8080"),
 		},
 		DBConfig: DBConfig{
 			User:            getEnv("DB_USER", "postgres"),
@@ -130,7 +132,7 @@ func LoadConfig() Config {
 			Port:            getEnv("DB_PORT", "5432"),
 			SSLMode:         getEnvWithFallback([]string{"DB_SSLMODE", "DB_SSL_MODE"}, "disable"),
 			MaxConns:        getEnvAsInt32("DB_MAX_CONNS", 25),
-			MinConns:        getEnvWithFallbackInt32([]string{"DB_MIN_CONNS", "MDB_MIN_CONNS"}, 5),
+			MinConns:        getEnvAsInt32("DB_MIN_CONNS", 5),
 			MaxConnLifetime: getEnvAsDuration("DB_MAX_CONN_LIFETIME", 1*time.Hour),
 			MaxConnIdleTime: getEnvAsDuration("DB_MAX_CONN_IDLE_TIME", 30*time.Minute),
 			HealthTimeout:   getEnvAsDuration("DB_HEALTH_TIMEOUT", 3*time.Second),
@@ -185,19 +187,6 @@ func getEnvWithFallback(keys []string, defaultVal string) string {
 	for _, key := range keys {
 		if val := os.Getenv(key); val != "" {
 			return cleanEnv(val)
-		}
-	}
-	return defaultVal
-}
-
-func getEnvWithFallbackInt32(keys []string, defaultVal int32) int32 {
-	for _, key := range keys {
-		if valStr := os.Getenv(key); valStr != "" {
-			cleaned := cleanEnv(valStr)
-			val, err := strconv.ParseInt(cleaned, 10, 32)
-			if err == nil {
-				return int32(val)
-			}
 		}
 	}
 	return defaultVal

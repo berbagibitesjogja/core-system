@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -9,34 +10,46 @@ import (
 	"github.com/berbagibitesjogja/core-system/internal/response"
 )
 
+type authContextKey struct{}
+
+func WithClaims(ctx context.Context, claims *auth.Claims) context.Context {
+	return context.WithValue(ctx, authContextKey{}, claims)
+}
+
 func Authenticate(jwtSecret string) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			header := r.Header.Get("Authorization")
 			if header == "" {
-				response.Unauthorized(w, "Missing auth header")
+				response.SetError(r.Context(), errors.New("missing authorization header"))
+				response.Unauthorized(w, r, "Missing auth header")
 				return
 			}
 
 			parts := strings.SplitN(header, " ", 2)
 			if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-				response.Unauthorized(w, "Invalid auth header")
+				response.SetError(r.Context(), errors.New("invalid authorization header format"))
+				response.Unauthorized(w, r, "Invalid auth header")
 				return
 			}
 
 			claims, err := auth.ParseToken(parts[1], jwtSecret)
 			if err != nil {
-				response.Unauthorized(w, "Invalid token: "+err.Error())
+				response.SetError(r.Context(), err)
+				response.Unauthorized(w, r, "Invalid token: "+err.Error())
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), "claims", claims)
+			ctx := WithClaims(r.Context(), claims)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
 func GetClaims(ctx context.Context) (*auth.Claims, bool) {
-	claims, ok := ctx.Value("claims").(*auth.Claims)
+	if ctx == nil {
+		return nil, false
+	}
+	claims, ok := ctx.Value(authContextKey{}).(*auth.Claims)
 	return claims, ok
 }

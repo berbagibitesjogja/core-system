@@ -1,0 +1,103 @@
+info:
+  name: Create Invitation
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{base_url}}/invitations"
+  body:
+    type: json
+    data: |-
+      {
+        "email": "user@berbagibitesjogja.com",
+        "role": "super",
+        "division_id": 2,
+        "name": "Budi Bakso",
+        "phone_number": "+62 8000-00-00000"
+      }
+      // {
+      //   "email": max 255
+      //   "role": super, core, staff
+      //   "division_id": int
+      //   "name"?: max 255
+      //   "phone_number"?: max 20
+      // }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: "201"
+    request:
+      url: "{{base_url}}/invitations"
+      method: POST
+      body:
+        type: json
+        data: |-
+          {
+            "email": "user@berbagibitesjogja.com",
+            "role": "super",
+            "division_id": 2,
+            "name": "Budi Bakso",
+            "phone_number": "+62 8000-00-00000"
+          }
+          // {
+          //   "email": max 255
+          //   "role": super, core, staff
+          //   "division_id": int
+          //   "name"?: max 255
+          //   "phone_number"?: max 20
+          // }
+    response:
+      status: 201
+      statusText: Created
+      headers:
+        - name: access-control-allow-headers
+          value: Content-Type, Authorization, X-Requested-With, Accept, Origin
+        - name: access-control-allow-methods
+          value: GET, POST, PUT, PATCH, DELETE, OPTIONS
+        - name: access-control-allow-origin
+          value: "*"
+        - name: access-control-expose-headers
+          value: Content-Length, Content-Type
+        - name: access-control-max-age
+          value: "86400"
+        - name: content-type
+          value: application/json; charset=utf-8
+        - name: referrer-policy
+          value: strict-origin-when-cross-origin
+        - name: x-content-type-options
+          value: nosniff
+        - name: x-frame-options
+          value: DENY
+        - name: x-request-id
+          value: ref_654708af
+        - name: x-xss-protection
+          value: 1; mode=block
+        - name: date
+          value: Sat, 31 Oct 2026 01:37:09 GMT
+        - name: content-length
+          value: "478"
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "Invitation created successfully",
+            "data": {
+              "id": "d0316a9b-9855-44a2-b968-8a80e75cfe9a",
+              "email": "user@berbagibitesjogja.com",
+              "role": "super",
+              "division_id": 2,
+              "name": "Budi Bakso",
+              "phone_number": "6280000000000",
+              "expires_at": "2026-11-02T08:37:09.122094+07:00",
+              "token": "b9e87ca6adb2e0d2c24b93752b7555b57caf50c79ced45ead12cabda4a08c7e0",
+              "invite_link": "http://localhost:8080/register?token=b9e87ca6adb2e0d2c24b93752b7555b57caf50c79ced45ead12cabda4a08c7e0"
+            }
+          }
