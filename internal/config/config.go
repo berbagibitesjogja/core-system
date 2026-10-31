@@ -16,6 +16,7 @@ type Config struct {
 	Storage   StorageConfig
 	Log       LogConfig
 	SMTP      SMTPConfig
+	OAuth     OAuthConfig
 }
 
 type DBConfig struct {
@@ -83,6 +84,17 @@ type SMTPConfig struct {
 	UseTLS        bool
 	ExpiryMinutes int
 }
+
+type OAuthConfig struct {
+	GoogleClientID     string
+	GoogleClientSecret string
+	GoogleRedirectURL  string
+}
+
+func (o OAuthConfig) IsGoogleConfigured() bool {
+	return o.GoogleClientID != "" && o.GoogleClientSecret != ""
+}
+
 
 func (d DBConfig) DSN() string {
 	u := &url.URL{
@@ -165,6 +177,11 @@ func LoadConfig() Config {
 			AuthRequired:  getEnvAsBool("SMTP_AUTH_REQUIRED", false),
 			UseTLS:        getEnvAsBool("SMTP_USE_TLS", false),
 			ExpiryMinutes: getEnvAsInt("SMTP_EXPIRY_MINUTES", 15),
+		},
+		OAuth: OAuthConfig{
+			GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
+			GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
+			GoogleRedirectURL:  getEnv("GOOGLE_REDIRECT_URL", "http://localhost:8080/api/v1/auth/google/callback"),
 		},
 	}
 }
