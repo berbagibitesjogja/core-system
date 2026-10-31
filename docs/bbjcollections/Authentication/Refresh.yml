@@ -1,0 +1,108 @@
+info:
+  name: Refresh
+  type: http
+  seq: 3
+
+http:
+  method: POST
+  url: "{{base_url}}/auth/refresh"
+  body:
+    type: json
+    data: |-
+      {
+        "refresh_token": "{{refreshToken}}"
+      }
+      // {
+      //   "refresh_token": unlimited
+      // }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: after-response
+      code: |-
+        const body = res.getBody();
+
+        if (body && body.data) {
+          const token = body.data.access_token;
+          const refresh = body.data.refresh_token;
+
+          if (token) {
+            bru.setVar("accessToken", token);
+            try {
+              bru.setEnvVar("accessToken", token);
+            } catch (e) {}
+          }
+
+          if (refresh) {
+            bru.setVar("refreshToken", refresh);
+            try {
+              bru.setEnvVar("refreshToken", refresh);
+            } catch (e) {}
+          }
+
+          console.log("Tokens rotated and stored successfully!");
+        }
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: "200"
+    request:
+      url: "{{base_url}}/auth/refresh"
+      method: POST
+      body:
+        type: json
+        data: |-
+          {
+            "refresh_token": "{{refreshToken}}"
+          }
+          // {
+          //   "refresh_token": unlimited
+          // }
+    response:
+      status: 200
+      statusText: OK
+      headers:
+        - name: access-control-allow-headers
+          value: Content-Type, Authorization, X-Requested-With, Accept, Origin
+        - name: access-control-allow-methods
+          value: GET, POST, PUT, PATCH, DELETE, OPTIONS
+        - name: access-control-allow-origin
+          value: "*"
+        - name: access-control-expose-headers
+          value: Content-Length, Content-Type
+        - name: access-control-max-age
+          value: "86400"
+        - name: content-type
+          value: application/json; charset=utf-8
+        - name: referrer-policy
+          value: strict-origin-when-cross-origin
+        - name: x-content-type-options
+          value: nosniff
+        - name: x-frame-options
+          value: DENY
+        - name: x-request-id
+          value: ref_97d67731
+        - name: x-xss-protection
+          value: 1; mode=block
+        - name: date
+          value: Sat, 31 Oct 2026 01:37:56 GMT
+        - name: content-length
+          value: "533"
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "Token refreshed successfully",
+            "data": {
+              "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiOTNmMzIwZGItY2Y2YS00YzRkLWE2OTctYTk4OTU3YmQ3MGYwIiwiZW1haWwiOiJ1c2VyQGJlcmJhZ2liaXRlc2pvZ2phLmNvbSIsInJvbGUiOiJzdXBlciIsImRpdmlzaW9uX2lkIjoyLCJzdWIiOiI5M2YzMjBkYi1jZjZhLTRjNGQtYTY5Ny1hOTg5NTdiZDcwZjAiLCJleHAiOjE3OTM0MTE1NzYsImlhdCI6MTc5MzQxMDY3Nn0.OL2XyzEaxWgaaMwdBL7GPvUeic3u7BbbOS_5CKXJyK0",
+              "refresh_token": "b2e1c90df2d1ca9ed0707bf76da6dad47c3f3b68f9416dc02a8e98cb83b64089",
+              "expires_in": 900
+            }
+          }

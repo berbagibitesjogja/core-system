@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"bytes"
-	"context"
 	"log/slog"
 	"net/http"
 	"time"
@@ -14,7 +12,6 @@ type responseWriterInterceptor struct {
 	http.ResponseWriter
 	statusCode int
 	written    bool
-	body       bytes.Buffer
 }
 
 func (rw *responseWriterInterceptor) WriteHeader(statusCode int) {
@@ -30,18 +27,7 @@ func (rw *responseWriterInterceptor) Write(b []byte) (int, error) {
 	if !rw.written {
 		rw.WriteHeader(http.StatusOK)
 	}
-	if rw.statusCode >= 400 {
-		rw.body.Write(b)
-	}
 	return rw.ResponseWriter.Write(b)
-}
-
-func SetError(ctx context.Context, err error) {
-	response.SetError(ctx, err)
-}
-
-func GetError(ctx context.Context) error {
-	return response.GetError(ctx)
 }
 
 func Logger(next http.Handler) http.Handler {
@@ -75,8 +61,6 @@ func Logger(next http.Handler) http.Handler {
 
 		if err := response.GetError(ctx); err != nil {
 			attrs = append(attrs, "error", err.Error())
-		} else if rw.statusCode >= 400 && rw.body.Len() > 0 {
-			attrs = append(attrs, "error", rw.body.String())
 		}
 
 		slog.Log(ctx, level, "HTTP request handled", attrs...)

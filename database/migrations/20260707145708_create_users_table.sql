@@ -13,12 +13,21 @@ CREATE TABLE users (
     profile_pic UUID REFERENCES files(id),
     bio VARCHAR(500),
     address TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    email_verified_at TIMESTAMPTZ DEFAULT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ DEFAULT NULL
 );
 
+CREATE UNIQUE INDEX idx_users_active_email ON users (email) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX idx_users_active_phone ON users (phone_number) WHERE deleted_at IS NULL;
+
+CREATE INDEX idx_users_division_id ON users (division_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_users_role ON users (role) WHERE deleted_at IS NULL;
 CREATE INDEX idx_users_name_trgm ON users USING gin (name gin_trgm_ops);
+CREATE INDEX idx_users_email_trgm ON users USING gin (email gin_trgm_ops);
 
 -- +goose Down
-DROP TABLE users;
+DROP TABLE users CASCADE;
 DROP TYPE IF EXISTS user_role;
