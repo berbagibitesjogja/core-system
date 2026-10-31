@@ -82,6 +82,33 @@ func (q *Queries) CreateInvitation(ctx context.Context, arg CreateInvitationPara
 	return i, err
 }
 
+const getActiveInvitationByEmail = `-- name: GetActiveInvitationByEmail :one
+SELECT id, invited_by, email, role, division_id, name, phone_number, token_hash, expires_at, accepted_at, created_at
+FROM user_invitations
+WHERE email = $1 AND accepted_at IS NULL AND expires_at > NOW()
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetActiveInvitationByEmail(ctx context.Context, email string) (UserInvitation, error) {
+	row := q.db.QueryRow(ctx, getActiveInvitationByEmail, email)
+	var i UserInvitation
+	err := row.Scan(
+		&i.ID,
+		&i.InvitedBy,
+		&i.Email,
+		&i.Role,
+		&i.DivisionID,
+		&i.Name,
+		&i.PhoneNumber,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.AcceptedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getInvitationByTokenHash = `-- name: GetInvitationByTokenHash :one
 SELECT id, invited_by, email, role, division_id, name, phone_number, token_hash, expires_at, accepted_at, created_at
 FROM user_invitations

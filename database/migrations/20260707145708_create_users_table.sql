@@ -9,7 +9,7 @@ CREATE TABLE users (
     password_hash TEXT,
     role user_role NOT NULL DEFAULT 'staff',
     name VARCHAR(255) NOT NULL,
-    phone_number VARCHAR(20) NOT NULL,
+    phone_number VARCHAR(20) DEFAULT NULL,
     profile_pic UUID REFERENCES files(id),
     bio VARCHAR(500),
     address TEXT,

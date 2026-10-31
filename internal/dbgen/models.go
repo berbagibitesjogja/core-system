@@ -145,7 +145,7 @@ type User struct {
 	PasswordHash    pgtype.Text
 	Role            UserRole
 	Name            string
-	PhoneNumber     string
+	PhoneNumber     pgtype.Text
 	ProfilePic      pgtype.UUID
 	Bio             pgtype.Text
 	Address         pgtype.Text

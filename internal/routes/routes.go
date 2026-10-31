@@ -5,6 +5,7 @@ import (
 
 	"github.com/berbagibitesjogja/core-system/internal/config"
 	"github.com/berbagibitesjogja/core-system/internal/database"
+	"github.com/berbagibitesjogja/core-system/internal/dbgen"
 	"github.com/berbagibitesjogja/core-system/internal/handler"
 	"github.com/berbagibitesjogja/core-system/internal/mailer"
 	"github.com/berbagibitesjogja/core-system/internal/middleware"
@@ -26,8 +27,10 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 
 	// Auth and Mailer handlers
 	m := mailer.New(routerCfg.Config.SMTP)
+	queries := dbgen.New(routerCfg.Pool)
 	authHandler := handler.NewAuthHandler(routerCfg.Pool, routerCfg.Config)
 	invitationHandler := handler.NewInvitationHandler(routerCfg.Pool, routerCfg.Config, m)
+	oauthHandler := handler.NewOAuthHandler(routerCfg.Pool, routerCfg.Config, queries)
 
 	authMiddleware := middleware.Authenticate(routerCfg.Config.AppConfig.JWTSecret)
 
@@ -35,6 +38,10 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/register", authHandler.RegisterHandler)
 	mux.HandleFunc("POST /api/v1/auth/login", authHandler.LoginHandler)
 	mux.HandleFunc("POST /api/v1/auth/refresh", authHandler.RefreshTokenHandler)
+
+	// Google OAuth Endpoints
+	mux.HandleFunc("GET /api/v1/auth/google/login", oauthHandler.GoogleLoginHandler)
+	mux.HandleFunc("GET /api/v1/auth/google/callback", oauthHandler.GoogleCallbackHandler)
 
 	// Authenticated Auth Endpoints
 	mux.Handle("POST /api/v1/auth/logout", authMiddleware(http.HandlerFunc(authHandler.LogoutHandler)))

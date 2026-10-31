@@ -30,3 +30,10 @@ SELECT EXISTS (
     SELECT 1 FROM user_invitations
     WHERE email = $1 AND accepted_at IS NULL AND expires_at > NOW()
 ) AS exists;
+
+-- name: GetActiveInvitationByEmail :one
+SELECT id, invited_by, email, role, division_id, name, phone_number, token_hash, expires_at, accepted_at, created_at
+FROM user_invitations
+WHERE email = $1 AND accepted_at IS NULL AND expires_at > NOW()
+ORDER BY created_at DESC
+LIMIT 1;

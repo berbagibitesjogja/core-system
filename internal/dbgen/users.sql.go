@@ -48,7 +48,7 @@ type CreateUserParams struct {
 	PasswordHash    pgtype.Text
 	Role            UserRole
 	Name            string
-	PhoneNumber     string
+	PhoneNumber     pgtype.Text
 	IsActive        bool
 	EmailVerifiedAt pgtype.Timestamptz
 }
@@ -60,7 +60,7 @@ type CreateUserRow struct {
 	PasswordHash    pgtype.Text
 	Role            UserRole
 	Name            string
-	PhoneNumber     string
+	PhoneNumber     pgtype.Text
 	ProfilePic      pgtype.UUID
 	Bio             pgtype.Text
 	Address         pgtype.Text
@@ -159,6 +159,18 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const markEmailVerified = `-- name: MarkEmailVerified :exec
+UPDATE users
+SET email_verified_at = NOW(),
+    updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) MarkEmailVerified(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, markEmailVerified, id)
+	return err
 }
 
 const updateUserPassword = `-- name: UpdateUserPassword :one

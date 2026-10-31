@@ -1,0 +1,55 @@
+info:
+  name: Google Callback
+  type: http
+  seq: 6
+
+http:
+  method: GET
+  url: "{{base_url}}/auth/google/callback"
+  params:
+    - name: code
+      value: ""
+      type: query
+    - name: state
+      value: ""
+      type: query
+    - name: format
+      value: "json"
+      type: query
+  headers:
+    - name: Accept
+      value: "application/json"
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: after-response
+      code: |-
+        const body = res.getBody();
+
+        if (body && body.data) {
+          const token = body.data.access_token;
+          const refresh = body.data.refresh_token;
+
+          if (token) {
+            bru.setVar("accessToken", token);
+            try {
+              bru.setEnvVar("accessToken", token);
+            } catch (e) {}
+          }
+
+          if (refresh) {
+            bru.setVar("refreshToken", refresh);
+            try {
+              bru.setEnvVar("refreshToken", refresh);
+            } catch (e) {}
+          }
+
+          console.log("Google Login successful! Stored accessToken and refreshToken.");
+        }
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: false
+  maxRedirects: 5
