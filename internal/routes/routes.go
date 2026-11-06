@@ -32,6 +32,7 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	invitationHandler := handler.NewInvitationHandler(routerCfg.Pool, routerCfg.Config, m)
 	oauthHandler := handler.NewOAuthHandler(routerCfg.Pool, routerCfg.Config, queries)
 	sponsorHandler := handler.NewSponsorHandler(routerCfg.Pool, routerCfg.Config)
+	foodItemHandler := handler.NewFoodItemHandler(routerCfg.Pool, routerCfg.Config)
 
 	authMiddleware := middleware.Authenticate(routerCfg.Config.AppConfig.JWTSecret)
 	optionalAuth := middleware.OptionalAuthenticate(routerCfg.Config.AppConfig.JWTSecret)
@@ -59,6 +60,13 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	mux.Handle("PATCH /api/v1/sponsors/{id}", authMiddleware(http.HandlerFunc(sponsorHandler.UpdateSponsorHandler)))
 	mux.Handle("DELETE /api/v1/sponsors/{id}", authMiddleware(http.HandlerFunc(sponsorHandler.DeleteSponsorHandler)))
 
+	// Food Item Endpoints
+	mux.HandleFunc("GET /api/v1/food-items", foodItemHandler.ListFoodItemsHandler)
+	mux.HandleFunc("GET /api/v1/food-items/{id}", foodItemHandler.GetFoodItemByIDHandler)
+	mux.Handle("POST /api/v1/food-items", authMiddleware(http.HandlerFunc(foodItemHandler.CreateFoodItemHandler)))
+	mux.Handle("PATCH /api/v1/food-items/{id}", authMiddleware(http.HandlerFunc(foodItemHandler.UpdateFoodItemHandler)))
+	mux.Handle("DELETE /api/v1/food-items/{id}", authMiddleware(http.HandlerFunc(foodItemHandler.DeleteFoodItemHandler)))
+
 	rateLimit := routerCfg.Config.AppConfig.RateLimit
 	corsMiddleware := middleware.CORSWithConfig(routerCfg.Config.AppConfig.CORSOrigins, routerCfg.Config.AppConfig.CORSMaxAge)
 
@@ -85,6 +93,6 @@ func HealthCheckHandler(pool *pgxpool.Pool) http.HandlerFunc {
 func APIv1Handler(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]string{
 		"message": "Berbagi Bites Jogja API v1",
-		"version": "0.2.0",
+		"version": "0.3.0",
 	})
 }

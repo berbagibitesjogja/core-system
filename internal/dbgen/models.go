@@ -162,6 +162,13 @@ type File struct {
 	UpdatedAt     time.Time
 }
 
+type FoodItem struct {
+	ID        int32
+	Name      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type OauthAccount struct {
 	ID             int64
 	UserID         uuid.UUID
