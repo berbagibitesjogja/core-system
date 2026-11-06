@@ -56,6 +56,48 @@ func (ns NullFileUploadStatus) Value() (driver.Value, error) {
 	return string(ns.FileUploadStatus), nil
 }
 
+type SponsorVariant string
+
+const (
+	SponsorVariantCompany    SponsorVariant = "company"
+	SponsorVariantIndividual SponsorVariant = "individual"
+)
+
+func (e *SponsorVariant) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = SponsorVariant(s)
+	case string:
+		*e = SponsorVariant(s)
+	default:
+		return fmt.Errorf("unsupported scan type for SponsorVariant: %T", src)
+	}
+	return nil
+}
+
+type NullSponsorVariant struct {
+	SponsorVariant SponsorVariant
+	Valid          bool // Valid is true if SponsorVariant is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullSponsorVariant) Scan(value interface{}) error {
+	if value == nil {
+		ns.SponsorVariant, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.SponsorVariant.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullSponsorVariant) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.SponsorVariant), nil
+}
+
 type UserRole string
 
 const (
@@ -99,6 +141,16 @@ func (ns NullUserRole) Value() (driver.Value, error) {
 	return string(ns.UserRole), nil
 }
 
+type BeneficiaryCategory struct {
+	ID        uuid.UUID
+	Name      string
+	Variant   string
+	Hidden    bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt pgtype.Timestamptz
+}
+
 type Division struct {
 	ID        int32
 	Name      string
@@ -120,6 +172,13 @@ type File struct {
 	UpdatedAt     time.Time
 }
 
+type FoodItem struct {
+	ID        int32
+	Name      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type OauthAccount struct {
 	ID             int64
 	UserID         uuid.UUID
@@ -136,6 +195,44 @@ type RefreshToken struct {
 	ExpiresAt time.Time
 	RevokedAt pgtype.Timestamptz
 	CreatedAt time.Time
+}
+
+type Reimbursement struct {
+	ID              uuid.UUID
+	UserID          uuid.UUID
+	Amount          int64
+	Method          string
+	Target          string
+	Notes           pgtype.Text
+	Status          string
+	PaymentProof    pgtype.UUID
+	PaidBy          pgtype.UUID
+	PaidAt          pgtype.Timestamptz
+	RejectionReason pgtype.Text
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	DeletedAt       pgtype.Timestamptz
+}
+
+type ReimbursementFile struct {
+	ID              uuid.UUID
+	ReimbursementID uuid.UUID
+	FileID          uuid.UUID
+	CreatedAt       time.Time
+}
+
+type Sponsor struct {
+	ID        uuid.UUID
+	Name      string
+	Variant   NullSponsorVariant
+	Address   pgtype.Text
+	Email     pgtype.Text
+	Phone     pgtype.Text
+	Logo      pgtype.UUID
+	Hidden    bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt pgtype.Timestamptz
 }
 
 type User struct {

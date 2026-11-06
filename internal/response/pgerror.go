@@ -31,6 +31,14 @@ func HandleDBError(w http.ResponseWriter, r *http.Request, err error) bool {
 			fieldErrors["phone_number"] = "Phone number is already registered"
 		case strings.Contains(pgErr.ConstraintName, "email"):
 			fieldErrors["email"] = "Email address is already registered"
+		case strings.Contains(pgErr.ConstraintName, "beneficiary_categories"):
+			fieldErrors["name"] = "Beneficiary category already exists"
+		case strings.Contains(pgErr.ConstraintName, "food_items"):
+			fieldErrors["name"] = "Food item already exists"
+		case strings.Contains(pgErr.ConstraintName, "uq_reimbursement_files_pair"):
+			fieldErrors["file_id"] = "Receipt file is already attached to this reimbursement"
+		case strings.Contains(pgErr.ConstraintName, "name"):
+			fieldErrors["name"] = "Sponsor name is already registered"
 		default:
 			fieldErrors["general"] = "A record with this identifier already exists"
 		}
@@ -39,9 +47,18 @@ func HandleDBError(w http.ResponseWriter, r *http.Request, err error) bool {
 
 	case "23503": // foreign_key_violation
 		fieldErrors := make(map[string]string)
-		if strings.Contains(pgErr.ConstraintName, "division") {
+		switch {
+		case strings.Contains(pgErr.ConstraintName, "division"):
 			fieldErrors["division_id"] = "Selected division does not exist"
-		} else {
+		case strings.Contains(pgErr.ConstraintName, "logo"):
+			fieldErrors["logo"] = "Referenced logo file does not exist"
+		case strings.Contains(pgErr.ConstraintName, "payment_proof"):
+			fieldErrors["payment_proof"] = "Referenced payment proof file does not exist"
+		case strings.Contains(pgErr.ConstraintName, "reimbursement_files_file_id"):
+			fieldErrors["file_id"] = "Referenced receipt file does not exist"
+		case strings.Contains(pgErr.ConstraintName, "user_id"):
+			fieldErrors["user_id"] = "Referenced user does not exist"
+		default:
 			fieldErrors["general"] = "Referenced resource does not exist"
 		}
 		ErrorWithRequest(w, r, http.StatusBadRequest, "VAL_002", "Validation failed", fieldErrors)
