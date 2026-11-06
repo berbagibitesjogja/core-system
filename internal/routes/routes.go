@@ -101,6 +101,6 @@ func HealthCheckHandler(pool *pgxpool.Pool) http.HandlerFunc {
 func APIv1Handler(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]string{
 		"message": "Berbagi Bites Jogja API v1",
-		"version": "0.3.0",
+		"version": "0.4.0",
 	})
 }
