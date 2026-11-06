@@ -35,6 +35,8 @@ func HandleDBError(w http.ResponseWriter, r *http.Request, err error) bool {
 			fieldErrors["name"] = "Beneficiary category already exists"
 		case strings.Contains(pgErr.ConstraintName, "food_items"):
 			fieldErrors["name"] = "Food item already exists"
+		case strings.Contains(pgErr.ConstraintName, "uq_reimbursement_files_pair"):
+			fieldErrors["file_id"] = "Receipt file is already attached to this reimbursement"
 		case strings.Contains(pgErr.ConstraintName, "name"):
 			fieldErrors["name"] = "Sponsor name is already registered"
 		default:
@@ -50,6 +52,12 @@ func HandleDBError(w http.ResponseWriter, r *http.Request, err error) bool {
 			fieldErrors["division_id"] = "Selected division does not exist"
 		case strings.Contains(pgErr.ConstraintName, "logo"):
 			fieldErrors["logo"] = "Referenced logo file does not exist"
+		case strings.Contains(pgErr.ConstraintName, "payment_proof"):
+			fieldErrors["payment_proof"] = "Referenced payment proof file does not exist"
+		case strings.Contains(pgErr.ConstraintName, "reimbursement_files_file_id"):
+			fieldErrors["file_id"] = "Referenced receipt file does not exist"
+		case strings.Contains(pgErr.ConstraintName, "user_id"):
+			fieldErrors["user_id"] = "Referenced user does not exist"
 		default:
 			fieldErrors["general"] = "Referenced resource does not exist"
 		}

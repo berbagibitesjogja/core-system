@@ -14,4 +14,4 @@ INSERT INTO users (id, division_id, email, password_hash, role, name, phone_numb
     ('00000000-0000-0000-0000-000000000010', 4, 'medinfo.sf@berbagibitesjogja.com', '$2a$10$tS9YBF9cULWafDypXzP1ZOEttaMQMCIL29gC7gzfXXAfiY5vcNzZS', 'staff', 'Medinfo Staff', '6200000000010');
 
 -- +goose Down
-DELETE FROM users;
+TRUNCATE TABLE users CASCADE;

@@ -197,6 +197,30 @@ type RefreshToken struct {
 	CreatedAt time.Time
 }
 
+type Reimbursement struct {
+	ID              uuid.UUID
+	UserID          uuid.UUID
+	Amount          int64
+	Method          string
+	Target          string
+	Notes           pgtype.Text
+	Status          string
+	PaymentProof    pgtype.UUID
+	PaidBy          pgtype.UUID
+	PaidAt          pgtype.Timestamptz
+	RejectionReason pgtype.Text
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	DeletedAt       pgtype.Timestamptz
+}
+
+type ReimbursementFile struct {
+	ID              uuid.UUID
+	ReimbursementID uuid.UUID
+	FileID          uuid.UUID
+	CreatedAt       time.Time
+}
+
 type Sponsor struct {
 	ID        uuid.UUID
 	Name      string

@@ -34,6 +34,7 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	sponsorHandler := handler.NewSponsorHandler(routerCfg.Pool, routerCfg.Config)
 	foodItemHandler := handler.NewFoodItemHandler(routerCfg.Pool, routerCfg.Config)
 	beneficiaryCategoryHandler := handler.NewBeneficiaryCategoryHandler(routerCfg.Pool, routerCfg.Config)
+	reimbursementHandler := handler.NewReimbursementHandler(routerCfg.Pool, routerCfg.Config)
 
 	authMiddleware := middleware.Authenticate(routerCfg.Config.AppConfig.JWTSecret)
 	optionalAuth := middleware.OptionalAuthenticate(routerCfg.Config.AppConfig.JWTSecret)
@@ -75,6 +76,13 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	mux.Handle("PATCH /api/v1/beneficiary-categories/{id}", authMiddleware(http.HandlerFunc(beneficiaryCategoryHandler.UpdateBeneficiaryCategoryHandler)))
 	mux.Handle("DELETE /api/v1/beneficiary-categories/{id}", authMiddleware(http.HandlerFunc(beneficiaryCategoryHandler.DeleteBeneficiaryCategoryHandler)))
 
+	// Reimbursement Endpoints
+	mux.Handle("POST /api/v1/reimbursements", authMiddleware(http.HandlerFunc(reimbursementHandler.CreateReimbursementHandler)))
+	mux.Handle("GET /api/v1/reimbursements", authMiddleware(http.HandlerFunc(reimbursementHandler.ListReimbursementsHandler)))
+	mux.Handle("GET /api/v1/reimbursements/{id}", authMiddleware(http.HandlerFunc(reimbursementHandler.GetReimbursementByIDHandler)))
+	mux.Handle("PATCH /api/v1/reimbursements/{id}", authMiddleware(http.HandlerFunc(reimbursementHandler.UpdateReimbursementHandler)))
+	mux.Handle("DELETE /api/v1/reimbursements/{id}", authMiddleware(http.HandlerFunc(reimbursementHandler.DeleteReimbursementHandler)))
+
 	rateLimit := routerCfg.Config.AppConfig.RateLimit
 	corsMiddleware := middleware.CORSWithConfig(routerCfg.Config.AppConfig.CORSOrigins, routerCfg.Config.AppConfig.CORSMaxAge)
 
@@ -101,6 +109,6 @@ func HealthCheckHandler(pool *pgxpool.Pool) http.HandlerFunc {
 func APIv1Handler(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]string{
 		"message": "Berbagi Bites Jogja API v1",
-		"version": "0.4.0",
+		"version": "0.5.0",
 	})
 }
