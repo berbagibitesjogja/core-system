@@ -4,33 +4,38 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"strconv"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type Claims struct {
-	UserID   int64  `json:"user_id"`
-	Username string `json:"username,omitempty"`
-	Email    string `json:"email,omitempty"`
-	Role     string `json:"role"`
+	UserID     uuid.UUID `json:"user_id"`
+	Email      string    `json:"email"`
+	Role       string    `json:"role"`
+	DivisionID int32     `json:"division_id"`
 	jwt.RegisteredClaims
+}
+
+func HashPassword(password string) (string, error) {
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(bytes), err
 }
 
 func CheckPassword(password, hash string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
-func SignAccessToken(userID int64, username string, email string, role string, secret string, duration time.Duration) (string, error) {
+func SignAccessToken(userID uuid.UUID, email string, role string, divisionID int32, secret string, duration time.Duration) (string, error) {
 	claims := Claims{
-		UserID:   userID,
-		Username: username,
-		Email:    email,
-		Role:     role,
+		UserID:     userID,
+		Email:      email,
+		Role:       role,
+		DivisionID: divisionID,
 		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   strconv.FormatInt(userID, 10),
+			Subject:   userID.String(),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(duration)),
 		},
@@ -46,6 +51,15 @@ func GenerateRefreshToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+func GenerateSecureToken() (raw string, hash string, err error) {
+	raw, err = GenerateRefreshToken()
+	if err != nil {
+		return "", "", err
+	}
+	hash = HashToken(raw)
+	return raw, hash, nil
 }
 
 func HashToken(rawToken string) string {

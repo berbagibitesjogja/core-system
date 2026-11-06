@@ -44,7 +44,9 @@ $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 CREATE OR REPLACE FUNCTION trigger_normalize_user_phone_number()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.phone_number := normalize_phone_number(NEW.phone_number);
+    IF NEW.phone_number IS NOT NULL AND NEW.phone_number != '' THEN
+        NEW.phone_number := normalize_phone_number(NEW.phone_number);
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -57,8 +59,16 @@ FOR EACH ROW
 EXECUTE FUNCTION trigger_normalize_user_phone_number();
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+CREATE TRIGGER trg_normalize_invitation_phone_number
+BEFORE INSERT OR UPDATE OF phone_number ON user_invitations
+FOR EACH ROW
+EXECUTE FUNCTION trigger_normalize_user_phone_number();
+-- +goose StatementEnd
+
 -- +goose Down
 -- +goose StatementBegin
+DROP TRIGGER IF EXISTS trg_normalize_invitation_phone_number ON user_invitations;
 DROP TRIGGER IF EXISTS trg_normalize_user_phone_number ON users;
 DROP FUNCTION IF EXISTS trigger_normalize_user_phone_number();
 DROP FUNCTION IF EXISTS normalize_phone_number(TEXT, TEXT);

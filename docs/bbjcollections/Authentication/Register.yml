@@ -1,0 +1,130 @@
+info:
+  name: Register
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: "{{base_url}}/auth/register"
+  body:
+    type: json
+    data: |-
+      {
+        "invitation_token": "b9e87ca6adb2e0d2c24b93752b7555b57caf50c79ced45ead12cabda4a08c7e0",
+        "password": "password",
+        "name": "Budi Bakso",
+        "phone_number": "6280000000000"
+      }
+      // {
+      //   "invitation_token": unlimited
+      //   "password": unlimited
+      //   "name": string, max 255
+      //   "phone_number": max 20
+      // }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: after-response
+      code: |-
+        const body = res.getBody();
+
+        if (body && body.data) {
+          const token = body.data.access_token;
+          const refresh = body.data.refresh_token;
+
+          if (token) {
+            bru.setVar("accessToken", token);
+            try {
+              bru.setEnvVar("accessToken", token);
+            } catch (e) {}
+          }
+
+          if (refresh) {
+            bru.setVar("refreshToken", refresh);
+            try {
+              bru.setEnvVar("refreshToken", refresh);
+            } catch (e) {}
+          }
+
+          console.log("Registered and tokens stored successfully!");
+        }
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: "201"
+    request:
+      url: "{{base_url}}/auth/register"
+      method: POST
+      body:
+        type: json
+        data: |-
+          {
+            "invitation_token": "b9e87ca6adb2e0d2c24b93752b7555b57caf50c79ced45ead12cabda4a08c7e0",
+            "password": "password",
+            "name": "Budi Bakso",
+            "phone_number": "6280000000000"
+          }
+          // {
+          //   "invitation_token": unlimited
+          //   "password": unlimited
+          //   "name": string, max 255
+          //   "phone_number": max 20
+          // }
+    response:
+      status: 201
+      statusText: Created
+      headers:
+        - name: access-control-allow-headers
+          value: Content-Type, Authorization, X-Requested-With, Accept, Origin
+        - name: access-control-allow-methods
+          value: GET, POST, PUT, PATCH, DELETE, OPTIONS
+        - name: access-control-allow-origin
+          value: "*"
+        - name: access-control-expose-headers
+          value: Content-Length, Content-Type
+        - name: access-control-max-age
+          value: "86400"
+        - name: content-type
+          value: application/json; charset=utf-8
+        - name: referrer-policy
+          value: strict-origin-when-cross-origin
+        - name: x-content-type-options
+          value: nosniff
+        - name: x-frame-options
+          value: DENY
+        - name: x-request-id
+          value: ref_c285a83b
+        - name: x-xss-protection
+          value: 1; mode=block
+        - name: date
+          value: Sat, 31 Oct 2026 01:37:48 GMT
+        - name: content-length
+          value: "770"
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "User registered successfully",
+            "data": {
+              "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiOTNmMzIwZGItY2Y2YS00YzRkLWE2OTctYTk4OTU3YmQ3MGYwIiwiZW1haWwiOiJ1c2VyQGJlcmJhZ2liaXRlc2pvZ2phLmNvbSIsInJvbGUiOiJzdXBlciIsImRpdmlzaW9uX2lkIjoyLCJzdWIiOiI5M2YzMjBkYi1jZjZhLTRjNGQtYTY5Ny1hOTg5NTdiZDcwZjAiLCJleHAiOjE3OTM0MTE1NjgsImlhdCI6MTc5MzQxMDY2OH0.2puEsD7vT3xI3ceBEmU8d2yKfVMv1EMPaLGLQTs8Wfg",
+              "refresh_token": "1dcf9e5540df2f5aee6caccf3570450ddf10e5cdd4c1133eb962821a018d3470",
+              "expires_in": 900,
+              "user": {
+                "id": "93f320db-cf6a-4c4d-a697-a98957bd70f0",
+                "email": "user@berbagibitesjogja.com",
+                "role": "super",
+                "division_id": 2,
+                "name": "Budi Bakso",
+                "phone_number": "6280000000000",
+                "is_active": true,
+                "email_verified_at": "2026-10-31T08:37:48+07:00"
+              }
+            }
+          }

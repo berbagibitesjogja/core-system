@@ -1,0 +1,111 @@
+info:
+  name: Create Sponsor
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{base_url}}/sponsors"
+  body:
+    type: json
+    data: |-
+      {
+        "name": "PT Berbagi Bites Jogja",
+        "variant": "company",
+        "address": "Di Sleman",
+        "email": "it@berbagibitesjogja.com",
+        "phone": "+62 000-000 000 001",
+        "logo": null,
+        "hidden": false
+      }
+      // {
+      //   "name": max 50
+      //   "variant"?: company, individual
+      //   "address"?: max 500
+      //   "email"?: max 255
+      //   "phone"?: max 20
+      //   "logo"?: UUID
+      //   "hidden"?: boolean
+      // }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: "201"
+    request:
+      url: "{{base_url}}/sponsors"
+      method: POST
+      body:
+        type: json
+        data: |-
+          {
+            "name": "PT Berbagi Bites Jogja",
+            "variant": "company",
+            "address": "Di Sleman",
+            "email": "it@berbagibitesjogja.com",
+            "phone": "+62 000-000 000 001",
+            "logo": null,
+            "hidden": false
+          }
+          // {
+          //   "name": max 50
+          //   "variant"?: company, individual
+          //   "address"?: max 500
+          //   "email"?: max 255
+          //   "phone"?: max 20
+          //   "logo"?: UUID
+          //   "hidden"?: boolean
+          // }
+    response:
+      status: 201
+      statusText: Created
+      headers:
+        - name: access-control-allow-headers
+          value: Content-Type, Authorization, X-Requested-With, Accept, Origin
+        - name: access-control-allow-methods
+          value: GET, POST, PUT, PATCH, DELETE, OPTIONS
+        - name: access-control-allow-origin
+          value: "*"
+        - name: access-control-expose-headers
+          value: Content-Length, Content-Type
+        - name: access-control-max-age
+          value: "86400"
+        - name: content-type
+          value: application/json; charset=utf-8
+        - name: referrer-policy
+          value: strict-origin-when-cross-origin
+        - name: x-content-type-options
+          value: nosniff
+        - name: x-frame-options
+          value: DENY
+        - name: x-request-id
+          value: ref_05f3dd16
+        - name: x-xss-protection
+          value: 1; mode=block
+        - name: date
+          value: Fri, 06 Nov 2026 16:27:53 GMT
+        - name: content-length
+          value: "345"
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "Sponsor created successfully",
+            "data": {
+              "id": "dbeed153-3ac5-46d2-90c3-83e9d5ac8318",
+              "name": "PT Berbagi Bites Jogja",
+              "variant": "company",
+              "address": "Di Sleman",
+              "email": "it@berbagibitesjogja.com",
+              "phone": "6200000000001",
+              "hidden": false,
+              "created_at": "2026-11-06T23:27:53+07:00",
+              "updated_at": "2026-11-06T23:27:53+07:00"
+            }
+          }

@@ -61,7 +61,7 @@ request:
             const rawBaseUrl = bru.getEnvVar("base_url") || bru.getEnvVar("baseUrl") || "http://localhost:8080/api/v1";
             const cleanBaseUrl = rawBaseUrl.replace(/\/+$/, '');
 
-            const refreshUrl = `${cleanBaseUrl}/refresh`;
+            const refreshUrl = `${cleanBaseUrl}/auth/refresh`;
 
             try {
               const response = await axios.post(refreshUrl, {

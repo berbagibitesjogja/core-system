@@ -1,0 +1,108 @@
+info:
+  name: Create Reimbursement
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{base_url}}/reimbursements"
+  body:
+    type: json
+    data: |-
+      {
+        "amount": 1000,
+        "method": "Bank Plecit",
+        "target": "000001",
+        "notes": "Beli ini itu",
+        "file_ids": []
+      }
+      // {
+      //   "amount": int
+      //   "method": max 50
+      //   "target": max 100
+      //   "notes"?: unlimited
+      //   "file_ids"?: uuid[]
+      // }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: "201"
+    request:
+      url: "{{base_url}}/reimbursements"
+      method: POST
+      body:
+        type: json
+        data: |-
+          {
+            "amount": 1000,
+            "method": "Bank Plecit",
+            "target": "000001",
+            "notes": "Beli ini itu",
+            "file_ids": []
+          }
+          // {
+          //   "amount": int
+          //   "method": max 50
+          //   "target": max 100
+          //   "notes"?: unlimited
+          //   "file_ids"?: uuid[]
+          // }
+    response:
+      status: 201
+      statusText: Created
+      headers:
+        - name: access-control-allow-headers
+          value: Content-Type, Authorization, X-Requested-With, Accept, Origin
+        - name: access-control-allow-methods
+          value: GET, POST, PUT, PATCH, DELETE, OPTIONS
+        - name: access-control-allow-origin
+          value: "*"
+        - name: access-control-expose-headers
+          value: Content-Length, Content-Type
+        - name: access-control-max-age
+          value: "86400"
+        - name: content-type
+          value: application/json; charset=utf-8
+        - name: referrer-policy
+          value: strict-origin-when-cross-origin
+        - name: x-content-type-options
+          value: nosniff
+        - name: x-frame-options
+          value: DENY
+        - name: x-request-id
+          value: ref_1fc27c0f
+        - name: x-xss-protection
+          value: 1; mode=block
+        - name: date
+          value: Fri, 06 Nov 2026 19:25:46 GMT
+        - name: content-length
+          value: "438"
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "Reimbursement created successfully",
+            "data": {
+              "id": "c647d7da-ee8d-4584-92f7-7ebe31d9ece8",
+              "user_id": "00000000-0000-0000-0000-000000000001",
+              "amount": 1000,
+              "method": "Bank Plecit",
+              "target": "000001",
+              "notes": "Beli ini itu",
+              "status": "pending",
+              "payment_proof": null,
+              "paid_by": null,
+              "paid_at": null,
+              "rejection_reason": null,
+              "file_ids": [],
+              "created_at": "2026-11-07T02:25:46+07:00",
+              "updated_at": "2026-11-07T02:25:46+07:00"
+            }
+          }

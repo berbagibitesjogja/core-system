@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -109,7 +110,8 @@ func RateLimit(requestsPerMinute int) func(http.Handler) http.Handler {
 			ip := getClientIP(r)
 			if !limiter.allow(ip) {
 				w.Header().Set("Retry-After", "1")
-				response.TooManyRequests(w, "")
+				response.SetError(r.Context(), fmt.Errorf("rate limit exceeded for ip %s", ip))
+				response.TooManyRequests(w, r, "")
 				return
 			}
 

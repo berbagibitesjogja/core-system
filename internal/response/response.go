@@ -112,27 +112,27 @@ func ErrorWithRequest(w http.ResponseWriter, r *http.Request, statusCode int, co
 	})
 }
 
-func BadRequest(w http.ResponseWriter, code, message string, errDetails any) {
-	Error(w, http.StatusBadRequest, code, message, errDetails)
+func BadRequest(w http.ResponseWriter, r *http.Request, code, message string, errDetails any) {
+	ErrorWithRequest(w, r, http.StatusBadRequest, code, message, errDetails)
 }
 
-func Unauthorized(w http.ResponseWriter, message string) {
-	Error(w, http.StatusUnauthorized, "UNAUTHORIZED", message, nil)
+func Unauthorized(w http.ResponseWriter, r *http.Request, message string) {
+	ErrorWithRequest(w, r, http.StatusUnauthorized, "UNAUTHORIZED", message, nil)
 }
 
-func Forbidden(w http.ResponseWriter, message string) {
-	Error(w, http.StatusForbidden, "FORBIDDEN", message, nil)
+func Forbidden(w http.ResponseWriter, r *http.Request, message string) {
+	ErrorWithRequest(w, r, http.StatusForbidden, "FORBIDDEN", message, nil)
 }
 
-func NotFound(w http.ResponseWriter, message string) {
-	Error(w, http.StatusNotFound, "NOT_FOUND", message, nil)
+func NotFound(w http.ResponseWriter, r *http.Request, message string) {
+	ErrorWithRequest(w, r, http.StatusNotFound, "NOT_FOUND", message, nil)
 }
 
-func TooManyRequests(w http.ResponseWriter, message string) {
+func TooManyRequests(w http.ResponseWriter, r *http.Request, message string) {
 	if message == "" {
 		message = "Too many requests, please try again later"
 	}
-	Error(w, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", message, nil)
+	ErrorWithRequest(w, r, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", message, nil)
 }
 
 func InternalServerError(w http.ResponseWriter, r *http.Request, err error, message string) {

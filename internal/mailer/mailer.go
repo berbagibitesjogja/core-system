@@ -19,6 +19,7 @@ var templateFS embed.FS
 
 var verificationTmpl = template.Must(template.ParseFS(templateFS, "templates/verification.html"))
 var passwordResetTmpl = template.Must(template.ParseFS(templateFS, "templates/password_reset.html"))
+var invitationTmpl = template.Must(template.ParseFS(templateFS, "templates/invitation.html"))
 
 type Mailer struct {
 	cfg config.SMTPConfig
@@ -36,8 +37,45 @@ type PasswordResetEmailData struct {
 	ExpiryMinutes int
 }
 
+type InvitationEmailData struct {
+	RecipientName string
+	InviterName   string
+	Role          string
+	DivisionName  string
+	InviteLink    string
+	ExpiryHours   int
+}
+
 func New(cfg config.SMTPConfig) *Mailer {
 	return &Mailer{cfg: cfg}
+}
+
+func (m *Mailer) RenderInvitationEmail(data InvitationEmailData) (string, error) {
+	var buf bytes.Buffer
+	if err := invitationTmpl.Execute(&buf, data); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+func (m *Mailer) SendInvitationEmail(toEmail, recipientName, inviterName, role, divisionName, inviteLink string, expiryHours int) error {
+	subject := "You have been invited to join Berbagi Bites Jogja"
+
+	data := InvitationEmailData{
+		RecipientName: recipientName,
+		InviterName:   inviterName,
+		Role:          role,
+		DivisionName:  divisionName,
+		InviteLink:    inviteLink,
+		ExpiryHours:   expiryHours,
+	}
+
+	body, err := m.RenderInvitationEmail(data)
+	if err != nil {
+		return err
+	}
+
+	return m.sendEmail(toEmail, subject, body)
 }
 
 func (m *Mailer) SendVerificationEmail(toEmail, recipientName, code string, expiryMinutes int) error {

@@ -132,3 +132,63 @@ func TestRefIDOmittedWhenEmpty(t *testing.T) {
 		}
 	})
 }
+
+func TestConvenienceHelpersWithRequest(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req = req.WithContext(WithRequestID(req.Context(), "ref_helper_test"))
+
+	t.Run("BadRequest includes ref_id", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		BadRequest(rec, req, "VAL_001", "Bad input", nil)
+
+		var resp Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp.RefID != "ref_helper_test" || rec.Code != http.StatusBadRequest {
+			t.Fatalf("unexpected response: code=%d ref_id=%s", rec.Code, resp.RefID)
+		}
+	})
+
+	t.Run("Unauthorized includes ref_id", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		Unauthorized(rec, req, "Invalid credentials")
+
+		var resp Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp.RefID != "ref_helper_test" || rec.Code != http.StatusUnauthorized {
+			t.Fatalf("unexpected response: code=%d ref_id=%s", rec.Code, resp.RefID)
+		}
+	})
+
+	t.Run("Forbidden includes ref_id", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		Forbidden(rec, req, "Access denied")
+
+		var resp Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp.RefID != "ref_helper_test" || rec.Code != http.StatusForbidden {
+			t.Fatalf("unexpected response: code=%d ref_id=%s", rec.Code, resp.RefID)
+		}
+	})
+
+	t.Run("NotFound includes ref_id", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		NotFound(rec, req, "Not found")
+
+		var resp Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp.RefID != "ref_helper_test" || rec.Code != http.StatusNotFound {
+			t.Fatalf("unexpected response: code=%d ref_id=%s", rec.Code, resp.RefID)
+		}
+	})
+
+	t.Run("TooManyRequests includes ref_id", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		TooManyRequests(rec, req, "")
+
+		var resp Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp.RefID != "ref_helper_test" || rec.Code != http.StatusTooManyRequests {
+			t.Fatalf("unexpected response: code=%d ref_id=%s", rec.Code, resp.RefID)
+		}
+	})
+}

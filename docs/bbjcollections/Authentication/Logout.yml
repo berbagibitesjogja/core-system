@@ -1,0 +1,88 @@
+info:
+  name: Logout
+  type: http
+  seq: 4
+
+http:
+  method: POST
+  url: "{{base_url}}/auth/logout"
+  body:
+    type: json
+    data: |-
+      {
+        "refresh_token": "{{refreshToken}}"
+      }
+      // {
+      //   "refresh_token": unlimited
+      // }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: after-response
+      code: |-
+        bru.setVar("accessToken", "");
+        bru.setVar("refreshToken", "");
+        try {
+          bru.setEnvVar("accessToken", "");
+          bru.setEnvVar("refreshToken", "");
+        } catch (e) {}
+        console.log("Logged out successfully");
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: "200"
+    request:
+      url: "{{base_url}}/auth/logout"
+      method: POST
+      body:
+        type: json
+        data: |-
+          {
+            "refresh_token": "{{refreshToken}}"
+          }
+          // {
+          //   "refresh_token": unlimited
+          // }
+    response:
+      status: 200
+      statusText: OK
+      headers:
+        - name: access-control-allow-headers
+          value: Content-Type, Authorization, X-Requested-With, Accept, Origin
+        - name: access-control-allow-methods
+          value: GET, POST, PUT, PATCH, DELETE, OPTIONS
+        - name: access-control-allow-origin
+          value: "*"
+        - name: access-control-expose-headers
+          value: Content-Length, Content-Type
+        - name: access-control-max-age
+          value: "86400"
+        - name: content-type
+          value: application/json; charset=utf-8
+        - name: referrer-policy
+          value: strict-origin-when-cross-origin
+        - name: x-content-type-options
+          value: nosniff
+        - name: x-frame-options
+          value: DENY
+        - name: x-request-id
+          value: ref_3beb3dc1
+        - name: x-xss-protection
+          value: 1; mode=block
+        - name: date
+          value: Sat, 31 Oct 2026 01:38:03 GMT
+        - name: content-length
+          value: "57"
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "Logged out successfully"
+          }
