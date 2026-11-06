@@ -69,6 +69,18 @@ func TestHandleDBError(t *testing.T) {
 			wantErrorVal: "Food item already exists",
 		},
 		{
+			name: "duplicate beneficiary category active name (23505)",
+			err: &pgconn.PgError{
+				Code:           "23505",
+				ConstraintName: "uk_beneficiary_categories_active_lower_name",
+			},
+			wantHandled:  true,
+			wantStatus:   http.StatusBadRequest,
+			wantCode:     "VAL_002",
+			wantErrorKey: "name",
+			wantErrorVal: "Beneficiary category already exists",
+		},
+		{
 			name: "foreign key violation on division (23503)",
 			err: &pgconn.PgError{
 				Code:           "23503",

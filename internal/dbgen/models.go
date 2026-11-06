@@ -141,6 +141,16 @@ func (ns NullUserRole) Value() (driver.Value, error) {
 	return string(ns.UserRole), nil
 }
 
+type BeneficiaryCategory struct {
+	ID        uuid.UUID
+	Name      string
+	Variant   string
+	Hidden    bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt pgtype.Timestamptz
+}
+
 type Division struct {
 	ID        int32
 	Name      string

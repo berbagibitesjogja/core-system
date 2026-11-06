@@ -33,6 +33,7 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	oauthHandler := handler.NewOAuthHandler(routerCfg.Pool, routerCfg.Config, queries)
 	sponsorHandler := handler.NewSponsorHandler(routerCfg.Pool, routerCfg.Config)
 	foodItemHandler := handler.NewFoodItemHandler(routerCfg.Pool, routerCfg.Config)
+	beneficiaryCategoryHandler := handler.NewBeneficiaryCategoryHandler(routerCfg.Pool, routerCfg.Config)
 
 	authMiddleware := middleware.Authenticate(routerCfg.Config.AppConfig.JWTSecret)
 	optionalAuth := middleware.OptionalAuthenticate(routerCfg.Config.AppConfig.JWTSecret)
@@ -66,6 +67,13 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	mux.Handle("POST /api/v1/food-items", authMiddleware(http.HandlerFunc(foodItemHandler.CreateFoodItemHandler)))
 	mux.Handle("PATCH /api/v1/food-items/{id}", authMiddleware(http.HandlerFunc(foodItemHandler.UpdateFoodItemHandler)))
 	mux.Handle("DELETE /api/v1/food-items/{id}", authMiddleware(http.HandlerFunc(foodItemHandler.DeleteFoodItemHandler)))
+
+	// Beneficiary Category Endpoints
+	mux.Handle("GET /api/v1/beneficiary-categories", optionalAuth(http.HandlerFunc(beneficiaryCategoryHandler.ListBeneficiaryCategoriesHandler)))
+	mux.Handle("GET /api/v1/beneficiary-categories/{id}", optionalAuth(http.HandlerFunc(beneficiaryCategoryHandler.GetBeneficiaryCategoryByIDHandler)))
+	mux.Handle("POST /api/v1/beneficiary-categories", authMiddleware(http.HandlerFunc(beneficiaryCategoryHandler.CreateBeneficiaryCategoryHandler)))
+	mux.Handle("PATCH /api/v1/beneficiary-categories/{id}", authMiddleware(http.HandlerFunc(beneficiaryCategoryHandler.UpdateBeneficiaryCategoryHandler)))
+	mux.Handle("DELETE /api/v1/beneficiary-categories/{id}", authMiddleware(http.HandlerFunc(beneficiaryCategoryHandler.DeleteBeneficiaryCategoryHandler)))
 
 	rateLimit := routerCfg.Config.AppConfig.RateLimit
 	corsMiddleware := middleware.CORSWithConfig(routerCfg.Config.AppConfig.CORSOrigins, routerCfg.Config.AppConfig.CORSMaxAge)

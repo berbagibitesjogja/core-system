@@ -31,6 +31,8 @@ func HandleDBError(w http.ResponseWriter, r *http.Request, err error) bool {
 			fieldErrors["phone_number"] = "Phone number is already registered"
 		case strings.Contains(pgErr.ConstraintName, "email"):
 			fieldErrors["email"] = "Email address is already registered"
+		case strings.Contains(pgErr.ConstraintName, "beneficiary_categories"):
+			fieldErrors["name"] = "Beneficiary category already exists"
 		case strings.Contains(pgErr.ConstraintName, "food_items"):
 			fieldErrors["name"] = "Food item already exists"
 		case strings.Contains(pgErr.ConstraintName, "name"):
