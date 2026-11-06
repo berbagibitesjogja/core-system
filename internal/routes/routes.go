@@ -25,14 +25,16 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	mux.HandleFunc("/health", HealthCheckHandler(routerCfg.Pool))
 	mux.HandleFunc("/api/v1", APIv1Handler)
 
-	// Auth and Mailer handlers
+	// Handlers initialization
 	m := mailer.New(routerCfg.Config.SMTP)
 	queries := dbgen.New(routerCfg.Pool)
 	authHandler := handler.NewAuthHandler(routerCfg.Pool, routerCfg.Config)
 	invitationHandler := handler.NewInvitationHandler(routerCfg.Pool, routerCfg.Config, m)
 	oauthHandler := handler.NewOAuthHandler(routerCfg.Pool, routerCfg.Config, queries)
+	sponsorHandler := handler.NewSponsorHandler(routerCfg.Pool, routerCfg.Config)
 
 	authMiddleware := middleware.Authenticate(routerCfg.Config.AppConfig.JWTSecret)
+	optionalAuth := middleware.OptionalAuthenticate(routerCfg.Config.AppConfig.JWTSecret)
 
 	// Public Auth Endpoints
 	mux.HandleFunc("POST /api/v1/auth/register", authHandler.RegisterHandler)
@@ -50,10 +52,17 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	mux.HandleFunc("GET /api/v1/invitations/validate", invitationHandler.ValidateInvitationHandler)
 	mux.Handle("POST /api/v1/invitations", authMiddleware(http.HandlerFunc(invitationHandler.CreateInvitationHandler)))
 
+	// Sponsor Endpoints
+	mux.Handle("GET /api/v1/sponsors", optionalAuth(http.HandlerFunc(sponsorHandler.ListSponsorsHandler)))
+	mux.Handle("GET /api/v1/sponsors/{id}", optionalAuth(http.HandlerFunc(sponsorHandler.GetSponsorByIDHandler)))
+	mux.Handle("POST /api/v1/sponsors", authMiddleware(http.HandlerFunc(sponsorHandler.CreateSponsorHandler)))
+	mux.Handle("PATCH /api/v1/sponsors/{id}", authMiddleware(http.HandlerFunc(sponsorHandler.UpdateSponsorHandler)))
+	mux.Handle("DELETE /api/v1/sponsors/{id}", authMiddleware(http.HandlerFunc(sponsorHandler.DeleteSponsorHandler)))
+
 	rateLimit := routerCfg.Config.AppConfig.RateLimit
 	corsMiddleware := middleware.CORSWithConfig(routerCfg.Config.AppConfig.CORSOrigins, routerCfg.Config.AppConfig.CORSMaxAge)
 
-	// Reordered: RequestID and Logger wrap RateLimit so that 429 rejections are assigned ref_id and logged in slog
+	// RequestID and Logger wrap RateLimit so that 429 rejections are assigned ref_id and logged in slog
 	return corsMiddleware(middleware.SecurityHeaders(middleware.RequestID(middleware.Logger(middleware.RateLimit(rateLimit)(mux)))))
 }
 

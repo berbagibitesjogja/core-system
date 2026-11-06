@@ -242,6 +242,7 @@ func (h *OAuthHandler) GoogleCallbackHandler(w http.ResponseWriter, r *http.Requ
 			Email:           invitation.Email,
 			Role:            invitation.Role,
 			Name:            finalName,
+			PhoneNumber:     invitation.PhoneNumber,
 			IsActive:        true,
 			EmailVerifiedAt: pgtype.Timestamptz{Time: now, Valid: true},
 		})

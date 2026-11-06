@@ -45,6 +45,18 @@ func TestHandleDBError(t *testing.T) {
 			wantErrorVal: "Email address is already registered",
 		},
 		{
+			name: "duplicate sponsor active name (23505)",
+			err: &pgconn.PgError{
+				Code:           "23505",
+				ConstraintName: "uk_sponsors_active_name",
+			},
+			wantHandled:  true,
+			wantStatus:   http.StatusBadRequest,
+			wantCode:     "VAL_002",
+			wantErrorKey: "name",
+			wantErrorVal: "Sponsor name is already registered",
+		},
+		{
 			name: "foreign key violation on division (23503)",
 			err: &pgconn.PgError{
 				Code:           "23503",
@@ -55,6 +67,18 @@ func TestHandleDBError(t *testing.T) {
 			wantCode:     "VAL_002",
 			wantErrorKey: "division_id",
 			wantErrorVal: "Selected division does not exist",
+		},
+		{
+			name: "foreign key violation on sponsor logo (23503)",
+			err: &pgconn.PgError{
+				Code:           "23503",
+				ConstraintName: "sponsors_logo_fkey",
+			},
+			wantHandled:  true,
+			wantStatus:   http.StatusBadRequest,
+			wantCode:     "VAL_002",
+			wantErrorKey: "logo",
+			wantErrorVal: "Referenced logo file does not exist",
 		},
 		{
 			name: "string truncation (22001)",
