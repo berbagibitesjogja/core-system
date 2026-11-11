@@ -17,7 +17,7 @@ SELECT
     (h.user_id IS NOT NULL)::BOOLEAN AS is_hero
 FROM oauth_accounts oa
 JOIN users u ON u.id = oa.user_id
-LEFT JOIN staff s ON s.user_id = u.id
+LEFT JOIN staff s ON s.user_id = u.id AND s.deleted_at IS NULL
 LEFT JOIN divisions d ON d.id = s.division_id AND d.deleted_at IS NULL
 LEFT JOIN heroes h ON h.user_id = u.id
 WHERE oa.provider = $1 AND oa.provider_user_id = $2 AND u.deleted_at IS NULL

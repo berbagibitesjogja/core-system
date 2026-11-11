@@ -37,6 +37,7 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	foodItemHandler := handler.NewFoodItemHandler(routerCfg.Pool, routerCfg.Config)
 	beneficiaryCategoryHandler := handler.NewBeneficiaryCategoryHandler(routerCfg.Pool, routerCfg.Config)
 	reimbursementHandler := handler.NewReimbursementHandler(routerCfg.Pool, routerCfg.Config)
+	staffHandler := handler.NewStaffHandler(routerCfg.Pool, routerCfg.Config)
 
 	authMiddleware := middleware.Authenticate(routerCfg.Config.AppConfig.JWTSecret)
 	optionalAuth := middleware.OptionalAuthenticate(routerCfg.Config.AppConfig.JWTSecret)
@@ -75,6 +76,14 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	mux.Handle("GET /api/v1/heroes/{id}/categories", staffOnly(http.HandlerFunc(heroHandler.ListHeroCategoriesHandler)))
 	mux.Handle("POST /api/v1/heroes/{id}/categories", staffOnly(http.HandlerFunc(heroHandler.AddHeroCategoryHandler)))
 	mux.Handle("DELETE /api/v1/heroes/{id}/categories/{category_id}", staffOnly(http.HandlerFunc(heroHandler.RemoveHeroCategoryHandler)))
+
+	// Staff Endpoints
+	mux.Handle("GET /api/v1/staff", staffOnly(http.HandlerFunc(staffHandler.ListStaffHandler)))
+	mux.Handle("GET /api/v1/staff/{id}", staffOnly(http.HandlerFunc(staffHandler.GetStaffHandler)))
+	mux.Handle("PATCH /api/v1/staff/me", staffOnly(http.HandlerFunc(staffHandler.SelfDemoteStaffHandler)))
+	mux.Handle("DELETE /api/v1/staff/me", staffOnly(http.HandlerFunc(staffHandler.ResignStaffHandler)))
+	mux.Handle("PATCH /api/v1/staff/{id}", staffOnly(http.HandlerFunc(staffHandler.UpdateStaffHandler)))
+	mux.Handle("DELETE /api/v1/staff/{id}", staffOnly(http.HandlerFunc(staffHandler.KickStaffHandler)))
 
 	// Sponsor Endpoints
 	mux.Handle("GET /api/v1/sponsors", optionalAuth(http.HandlerFunc(sponsorHandler.ListSponsorsHandler)))
@@ -130,6 +139,6 @@ func HealthCheckHandler(pool *pgxpool.Pool) http.HandlerFunc {
 func APIv1Handler(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]string{
 		"message": "Berbagi Bites Jogja API v1",
-		"version": "0.6.0",
+		"version": "0.7.0",
 	})
 }

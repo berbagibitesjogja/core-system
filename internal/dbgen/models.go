@@ -301,6 +301,7 @@ type Staff struct {
 	Role       UserRole
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+	DeletedAt  pgtype.Timestamptz
 }
 
 type User struct {

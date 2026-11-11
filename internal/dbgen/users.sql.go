@@ -37,7 +37,7 @@ INSERT INTO users (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING id, email, name, password_hash, phone_number, profile_pic, pfp_external_url, bio, address, is_active, email_verified_at, created_at, updated_at
+RETURNING id, email, name, phone_number, is_active, email_verified_at, created_at, updated_at
 `
 
 type CreateUserParams struct {
@@ -54,12 +54,7 @@ type CreateUserRow struct {
 	ID              uuid.UUID
 	Email           string
 	Name            string
-	PasswordHash    pgtype.Text
 	PhoneNumber     pgtype.Text
-	ProfilePic      pgtype.UUID
-	PfpExternalUrl  pgtype.Text
-	Bio             pgtype.Text
-	Address         pgtype.Text
 	IsActive        bool
 	EmailVerifiedAt pgtype.Timestamptz
 	CreatedAt       time.Time
@@ -81,12 +76,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 		&i.ID,
 		&i.Email,
 		&i.Name,
-		&i.PasswordHash,
 		&i.PhoneNumber,
-		&i.ProfilePic,
-		&i.PfpExternalUrl,
-		&i.Bio,
-		&i.Address,
 		&i.IsActive,
 		&i.EmailVerifiedAt,
 		&i.CreatedAt,
@@ -145,7 +135,7 @@ SELECT
     (s.user_id IS NOT NULL)::BOOLEAN AS is_staff,
     (h.user_id IS NOT NULL)::BOOLEAN AS is_hero
 FROM users u
-LEFT JOIN staff s ON s.user_id = u.id
+LEFT JOIN staff s ON s.user_id = u.id AND s.deleted_at IS NULL
 LEFT JOIN divisions d ON d.id = s.division_id AND d.deleted_at IS NULL
 LEFT JOIN heroes h ON h.user_id = u.id
 WHERE LOWER(u.email) = LOWER($1) AND u.deleted_at IS NULL
@@ -220,7 +210,7 @@ SELECT
     (s.user_id IS NOT NULL)::BOOLEAN AS is_staff,
     (h.user_id IS NOT NULL)::BOOLEAN AS is_hero
 FROM users u
-LEFT JOIN staff s ON s.user_id = u.id
+LEFT JOIN staff s ON s.user_id = u.id AND s.deleted_at IS NULL
 LEFT JOIN divisions d ON d.id = s.division_id AND d.deleted_at IS NULL
 LEFT JOIN heroes h ON h.user_id = u.id
 WHERE u.id = $1 AND u.deleted_at IS NULL
