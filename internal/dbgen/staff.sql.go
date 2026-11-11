@@ -10,7 +10,45 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const countActiveSuperAdmins = `-- name: CountActiveSuperAdmins :one
+SELECT COUNT(*)::BIGINT
+FROM staff
+WHERE role = 'super' AND deleted_at IS NULL
+`
+
+func (q *Queries) CountActiveSuperAdmins(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveSuperAdmins)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countStaff = `-- name: CountStaff :one
+SELECT COUNT(*)
+FROM staff s
+JOIN users u ON u.id = s.user_id
+WHERE s.deleted_at IS NULL 
+  AND u.deleted_at IS NULL
+  AND ($1::integer IS NULL OR s.division_id = $1)
+  AND ($2::user_role IS NULL OR s.role = $2)
+  AND ($3::text IS NULL OR u.name ILIKE '%' || $3 || '%' OR u.email ILIKE '%' || $3 || '%')
+`
+
+type CountStaffParams struct {
+	DivisionID pgtype.Int4
+	Role       NullUserRole
+	Search     pgtype.Text
+}
+
+func (q *Queries) CountStaff(ctx context.Context, arg CountStaffParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countStaff, arg.DivisionID, arg.Role, arg.Search)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
 
 const createStaff = `-- name: CreateStaff :one
 INSERT INTO staff (
@@ -20,6 +58,11 @@ INSERT INTO staff (
 ) VALUES (
     $1, $2, $3
 )
+ON CONFLICT (user_id) DO UPDATE
+SET division_id = EXCLUDED.division_id,
+    role = EXCLUDED.role,
+    deleted_at = NULL,
+    updated_at = NOW()
 RETURNING user_id, division_id, role, created_at, updated_at
 `
 
@@ -29,9 +72,17 @@ type CreateStaffParams struct {
 	Role       UserRole
 }
 
-func (q *Queries) CreateStaff(ctx context.Context, arg CreateStaffParams) (Staff, error) {
+type CreateStaffRow struct {
+	UserID     uuid.UUID
+	DivisionID int32
+	Role       UserRole
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+func (q *Queries) CreateStaff(ctx context.Context, arg CreateStaffParams) (CreateStaffRow, error) {
 	row := q.db.QueryRow(ctx, createStaff, arg.UserID, arg.DivisionID, arg.Role)
-	var i Staff
+	var i CreateStaffRow
 	err := row.Scan(
 		&i.UserID,
 		&i.DivisionID,
@@ -43,9 +94,9 @@ func (q *Queries) CreateStaff(ctx context.Context, arg CreateStaffParams) (Staff
 }
 
 const getStaffByUserID = `-- name: GetStaffByUserID :one
-SELECT user_id, division_id, role, created_at, updated_at
+SELECT user_id, division_id, role, created_at, updated_at, deleted_at
 FROM staff
-WHERE user_id = $1
+WHERE user_id = $1 AND deleted_at IS NULL
 LIMIT 1
 `
 
@@ -58,6 +109,249 @@ func (q *Queries) GetStaffByUserID(ctx context.Context, userID uuid.UUID) (Staff
 		&i.Role,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getStaffDetailsByUserID = `-- name: GetStaffDetailsByUserID :one
+SELECT 
+    s.user_id,
+    u.email,
+    u.name,
+    u.phone_number,
+    u.profile_pic,
+    u.pfp_external_url,
+    u.is_active,
+    s.division_id,
+    d.name AS division_name,
+    s.role,
+    s.created_at,
+    s.updated_at
+FROM staff s
+JOIN users u ON u.id = s.user_id
+JOIN divisions d ON d.id = s.division_id
+WHERE s.user_id = $1 AND s.deleted_at IS NULL AND u.deleted_at IS NULL
+LIMIT 1
+`
+
+type GetStaffDetailsByUserIDRow struct {
+	UserID         uuid.UUID
+	Email          string
+	Name           string
+	PhoneNumber    pgtype.Text
+	ProfilePic     pgtype.UUID
+	PfpExternalUrl pgtype.Text
+	IsActive       bool
+	DivisionID     int32
+	DivisionName   string
+	Role           UserRole
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+func (q *Queries) GetStaffDetailsByUserID(ctx context.Context, userID uuid.UUID) (GetStaffDetailsByUserIDRow, error) {
+	row := q.db.QueryRow(ctx, getStaffDetailsByUserID, userID)
+	var i GetStaffDetailsByUserIDRow
+	err := row.Scan(
+		&i.UserID,
+		&i.Email,
+		&i.Name,
+		&i.PhoneNumber,
+		&i.ProfilePic,
+		&i.PfpExternalUrl,
+		&i.IsActive,
+		&i.DivisionID,
+		&i.DivisionName,
+		&i.Role,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listStaff = `-- name: ListStaff :many
+SELECT 
+    s.user_id,
+    u.email,
+    u.name,
+    u.phone_number,
+    u.profile_pic,
+    u.pfp_external_url,
+    u.is_active,
+    s.division_id,
+    d.name AS division_name,
+    s.role,
+    s.created_at,
+    s.updated_at
+FROM staff s
+JOIN users u ON u.id = s.user_id
+JOIN divisions d ON d.id = s.division_id
+WHERE s.deleted_at IS NULL 
+  AND u.deleted_at IS NULL
+  AND ($3::integer IS NULL OR s.division_id = $3)
+  AND ($4::user_role IS NULL OR s.role = $4)
+  AND ($5::text IS NULL OR u.name ILIKE '%' || $5 || '%' OR u.email ILIKE '%' || $5 || '%')
+ORDER BY 
+    CASE s.role 
+        WHEN 'super' THEN 1 
+        WHEN 'core' THEN 2 
+        WHEN 'staff' THEN 3 
+        ELSE 4 
+    END, 
+    u.name ASC
+LIMIT $1 OFFSET $2
+`
+
+type ListStaffParams struct {
+	Limit      int32
+	Offset     int32
+	DivisionID pgtype.Int4
+	Role       NullUserRole
+	Search     pgtype.Text
+}
+
+type ListStaffRow struct {
+	UserID         uuid.UUID
+	Email          string
+	Name           string
+	PhoneNumber    pgtype.Text
+	ProfilePic     pgtype.UUID
+	PfpExternalUrl pgtype.Text
+	IsActive       bool
+	DivisionID     int32
+	DivisionName   string
+	Role           UserRole
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+func (q *Queries) ListStaff(ctx context.Context, arg ListStaffParams) ([]ListStaffRow, error) {
+	rows, err := q.db.Query(ctx, listStaff,
+		arg.Limit,
+		arg.Offset,
+		arg.DivisionID,
+		arg.Role,
+		arg.Search,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStaffRow
+	for rows.Next() {
+		var i ListStaffRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Email,
+			&i.Name,
+			&i.PhoneNumber,
+			&i.ProfilePic,
+			&i.PfpExternalUrl,
+			&i.IsActive,
+			&i.DivisionID,
+			&i.DivisionName,
+			&i.Role,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const softDeleteStaff = `-- name: SoftDeleteStaff :one
+UPDATE staff
+SET deleted_at = NOW(),
+    updated_at = NOW()
+WHERE user_id = $1 AND deleted_at IS NULL
+RETURNING user_id, division_id, role, deleted_at
+`
+
+type SoftDeleteStaffRow struct {
+	UserID     uuid.UUID
+	DivisionID int32
+	Role       UserRole
+	DeletedAt  pgtype.Timestamptz
+}
+
+func (q *Queries) SoftDeleteStaff(ctx context.Context, userID uuid.UUID) (SoftDeleteStaffRow, error) {
+	row := q.db.QueryRow(ctx, softDeleteStaff, userID)
+	var i SoftDeleteStaffRow
+	err := row.Scan(
+		&i.UserID,
+		&i.DivisionID,
+		&i.Role,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const updateStaffDivision = `-- name: UpdateStaffDivision :one
+UPDATE staff
+SET division_id = $2,
+    updated_at = NOW()
+WHERE user_id = $1 AND deleted_at IS NULL
+RETURNING user_id, division_id, role, updated_at
+`
+
+type UpdateStaffDivisionParams struct {
+	UserID     uuid.UUID
+	DivisionID int32
+}
+
+type UpdateStaffDivisionRow struct {
+	UserID     uuid.UUID
+	DivisionID int32
+	Role       UserRole
+	UpdatedAt  time.Time
+}
+
+func (q *Queries) UpdateStaffDivision(ctx context.Context, arg UpdateStaffDivisionParams) (UpdateStaffDivisionRow, error) {
+	row := q.db.QueryRow(ctx, updateStaffDivision, arg.UserID, arg.DivisionID)
+	var i UpdateStaffDivisionRow
+	err := row.Scan(
+		&i.UserID,
+		&i.DivisionID,
+		&i.Role,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateStaffRole = `-- name: UpdateStaffRole :one
+UPDATE staff
+SET role = $2,
+    updated_at = NOW()
+WHERE user_id = $1 AND deleted_at IS NULL
+RETURNING user_id, division_id, role, updated_at
+`
+
+type UpdateStaffRoleParams struct {
+	UserID uuid.UUID
+	Role   UserRole
+}
+
+type UpdateStaffRoleRow struct {
+	UserID     uuid.UUID
+	DivisionID int32
+	Role       UserRole
+	UpdatedAt  time.Time
+}
+
+func (q *Queries) UpdateStaffRole(ctx context.Context, arg UpdateStaffRoleParams) (UpdateStaffRoleRow, error) {
+	row := q.db.QueryRow(ctx, updateStaffRole, arg.UserID, arg.Role)
+	var i UpdateStaffRoleRow
+	err := row.Scan(
+		&i.UserID,
+		&i.DivisionID,
+		&i.Role,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -66,6 +360,7 @@ const updateStaffRoleAndDivision = `-- name: UpdateStaffRoleAndDivision :one
 UPDATE staff
 SET role = $2,
     division_id = $3,
+    deleted_at = NULL,
     updated_at = NOW()
 WHERE user_id = $1
 RETURNING user_id, division_id, role, updated_at
