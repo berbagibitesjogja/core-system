@@ -1,7 +1,7 @@
-# API Contract: Google OAuth2 Authentication & Invite-Only Onboarding
+# API Contract: Google OAuth2 Authentication & Onboarding
 
-> **Document Version:** `1.0.0`  
-> **Topic ID:** `003`  
+> **Document Version:** `1.1.0`  
+> **Topic Reference:** `003`, `010`, `011`  
 > **Base Path:** `/api/v1`  
 > **Protocol:** OAuth 2.0 Authorization Code Flow + OpenID Connect  
 > **Specification Format:** REST / JSON / HTTP 307 Redirects  
@@ -32,11 +32,14 @@
     "user": {
       "id": "cedbdaa3-d5d3-4dca-a63b-01a2b36ac85f",
       "email": "sarah.core@berbagibitesjogja.com",
-      "role": "core",
-      "division_id": 2,
       "name": "Sarah Jenkins",
       "phone_number": "6281234567890",
       "is_active": true,
+      "is_staff": true,
+      "role": "core",
+      "division_id": 2,
+      "division_name": "Operational",
+      "is_hero": false,
       "email_verified_at": "2026-10-31T09:30:00+07:00"
     }
   }
@@ -102,7 +105,7 @@ Returned if Google OAuth credentials (`GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRE
 
 ### 3.2 Google Callback (`GET /api/v1/auth/google/callback`)
 
-Handles the return redirect from Google's OAuth consent screen. Exchanges the authorization `code` for Google OAuth tokens, fetches the user's verified OpenID profile, and resolves authentication across 4 deterministic flows.
+Receives Google's authorization code and signed state nonce. Validates CSRF cookie against state payload, exchanges authorization code with Google for tokens and user profile, and executes identity resolution.
 
 * **Method:** `GET`
 * **Path:** `/api/v1/auth/google/callback`
@@ -111,30 +114,28 @@ Handles the return redirect from Google's OAuth consent screen. Exchanges the au
 #### Query Parameters
 | Parameter | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
-| `code` | string | **Yes** | Temporary authorization code issued by Google. |
-| `state` | string | **Yes** | Signed HMAC-SHA256 state token returned by Google. |
-| `format` | string | No | Pass `format=json` to force direct JSON output instead of frontend redirection. |
+| `code` | string | **Yes** | Single-use authorization code issued by Google OAuth servers. |
+| `state` | string | **Yes** | Cryptographic HMAC signed state payload returned from Google. |
 
 ---
 
-### 3.3 Authentication & Linking State Machine
+### 3.3 Identity Resolution & Flow Logic
 
 ```mermaid
 flowchart TD
-    A["Google Callback Received"] --> B{"Is state signature valid & cookie nonce matching?"}
-    B -- No --> C["400 Bad Request: Invalid or expired state"]
-    B -- Yes --> D["Exchange code for Google tokens & fetch Google UserInfo"]
-    D --> E{"Is Google email verified?"}
-    E -- No --> F["400 Bad Request: EMAIL_NOT_VERIFIED"]
-    E -- Yes --> G{"Account linked in oauth_accounts?"}
-    G -- Yes (Flow 1) --> H{"Is account active?"}
-    H -- No --> I["401 Unauthorized: ACCOUNT_DEACTIVATED"]
-    H -- Yes --> J["Issue JWT & Refresh Token (Login Success)"]
-    G -- No --> K{"User exists with matching email in users table?"}
-    K -- Yes (Flow 2) --> L["Auto-link: INSERT into oauth_accounts -> Mark email_verified_at -> Issue Tokens"]
-    K -- No --> M{"Active, unexpired invitation exists for this email or state token?"}
-    M -- Yes (Flow 3) --> N["Onboard User: INSERT user (password_hash=NULL, Inviter Authority) -> Mark invitation accepted -> INSERT oauth_accounts -> Issue Tokens"]
-    M -- No (Flow 4) --> O["403 Forbidden: UNINVITED_USER (Invite-Only System)"]
+    A["Google Callback Received"] --> B["Validate State Nonce against Cookie"]
+    B -- Mismatch / Expired --> C["400 Bad Request: State CSRF Mismatch"]
+    B -- Valid --> D["Exchange Code for Google Access Token"]
+    D --> E["Fetch Google User Profile (email, name, picture)"]
+    E --> F["Check oauth_accounts table (provider='google', provider_user_id)"]
+    F -- Linked Record Found --> G{"Is account active?"}
+    G -- No --> H["401 Unauthorized: ACCOUNT_DEACTIVATED"]
+    G -- Yes (Flow 1: Existing Link) --> I["Issue JWT & Refresh Token (Login Success)"]
+    F -- No Record Found --> J{"User exists with matching email in users table?"}
+    J -- Yes (Flow 2: Auto-Link) --> K["Insert into oauth_accounts -> Mark email_verified_at -> Clear pre-verification sessions -> Issue Tokens"]
+    J -- No --> L{"Active, unexpired invitation exists for this email or state token?"}
+    L -- Yes (Flow 3: Onboard Invite) --> M["Insert user (Inviter Authority) -> Mark invitation accepted -> Insert oauth_accounts -> Issue Tokens"]
+    L -- No (Flow 4: Uninvited) --> N["403 Forbidden: UNINVITED_USER (Invite-Only System)"]
 ```
 
 #### Precedence Hierarchy (Inviter Authority)
@@ -178,11 +179,14 @@ When `FRONTEND_URL` points back to the backend itself (`:8080`), is empty, or th
       "user": {
         "id": "cedbdaa3-d5d3-4dca-a63b-01a2b36ac85f",
         "email": "afefspace@gmail.com",
-        "role": "super",
-        "division_id": 2,
         "name": "Afif Super",
         "phone_number": "6281234567890",
         "is_active": true,
+        "is_staff": true,
+        "role": "super",
+        "division_id": 2,
+        "division_name": "Operational",
+        "is_hero": false,
         "email_verified_at": "2026-10-31T09:30:00+07:00"
       }
     }

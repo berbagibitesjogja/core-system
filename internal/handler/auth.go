@@ -54,11 +54,14 @@ type LogoutRequest struct {
 type UserResponse struct {
 	ID              string  `json:"id"`
 	Email           string  `json:"email"`
-	Role            string  `json:"role"`
-	DivisionID      int32   `json:"division_id"`
 	Name            string  `json:"name"`
 	PhoneNumber     string  `json:"phone_number"`
 	IsActive        bool    `json:"is_active"`
+	IsStaff         bool    `json:"is_staff"`
+	Role            string  `json:"role,omitempty"`
+	DivisionID      int32   `json:"division_id,omitempty"`
+	DivisionName    string  `json:"division_name,omitempty"`
+	IsHero          bool    `json:"is_hero"`
 	EmailVerifiedAt *string `json:"email_verified_at,omitempty"`
 }
 
@@ -94,18 +97,14 @@ func (h *AuthHandler) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	if req.Password == "" {
 		fieldErrors["password"] = "Password is required"
 	} else if len(req.Password) < 8 {
-		fieldErrors["password"] = "Password must be at least 8 characters"
+		fieldErrors["password"] = "Password must be at least 8 characters long"
 	} else if len(req.Password) > 72 {
 		fieldErrors["password"] = "Password cannot exceed 72 characters"
 	}
-	if req.Name == "" {
-		fieldErrors["name"] = "Name is required"
-	} else if len(req.Name) > 255 {
+	if len(req.Name) > 255 {
 		fieldErrors["name"] = "Name cannot exceed 255 characters"
 	}
-	if req.PhoneNumber == "" {
-		fieldErrors["phone_number"] = "Phone number is required"
-	} else if len(req.PhoneNumber) > 20 {
+	if len(req.PhoneNumber) > 20 {
 		fieldErrors["phone_number"] = "Phone number cannot exceed 20 characters"
 	}
 
@@ -118,35 +117,54 @@ func (h *AuthHandler) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	invitation, err := h.queries.GetInvitationByTokenHash(r.Context(), tokenHash)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			response.SetError(r.Context(), errors.New("invitation token not found or invalid"))
+			response.SetError(r.Context(), errors.New("invitation token not found in database"))
 			response.Forbidden(w, r, "Invalid invitation token")
 			return
 		}
-		response.InternalServerError(w, r, err, "Failed to verify invitation")
+		response.InternalServerError(w, r, err, "Failed to verify invitation token")
 		return
 	}
 
 	if invitation.AcceptedAt.Valid {
-		response.SetError(r.Context(), fmt.Errorf("invitation %s already accepted at %s", invitation.ID, invitation.AcceptedAt.Time))
+		response.SetError(r.Context(), fmt.Errorf("invitation token %s already accepted", invitation.ID))
 		response.ErrorWithRequest(w, r, http.StatusGone, "INVITATION_ALREADY_USED", "This invitation has already been accepted", nil)
 		return
 	}
 
 	if time.Now().After(invitation.ExpiresAt) {
-		response.SetError(r.Context(), fmt.Errorf("invitation %s expired at %s", invitation.ID, invitation.ExpiresAt))
+		response.SetError(r.Context(), fmt.Errorf("invitation token %s expired at %s", invitation.ID, invitation.ExpiresAt))
 		response.ErrorWithRequest(w, r, http.StatusGone, "INVITATION_EXPIRED", "This invitation has expired", nil)
 		return
 	}
 
-	passwordHash, err := auth.HashPassword(req.Password)
+	name := invitation.Email
+	if req.Name != "" {
+		name = req.Name
+	} else if invitation.Name.Valid && invitation.Name.String != "" {
+		name = invitation.Name.String
+	}
+
+	var phoneStr string
+	if req.PhoneNumber != "" {
+		phoneStr = req.PhoneNumber
+	} else if invitation.PhoneNumber.Valid {
+		phoneStr = invitation.PhoneNumber.String
+	}
+
+	var phoneParam pgtype.Text
+	if phoneStr != "" {
+		phoneParam = pgtype.Text{String: phoneStr, Valid: true}
+	}
+
+	hashedPassword, err := auth.HashPassword(req.Password)
 	if err != nil {
-		response.InternalServerError(w, r, err, "Failed to process password")
+		response.InternalServerError(w, r, err, "Failed to secure password")
 		return
 	}
 
 	tx, err := h.pool.Begin(r.Context())
 	if err != nil {
-		response.InternalServerError(w, r, err, "Failed to initiate transaction")
+		response.InternalServerError(w, r, err, "Failed to start database transaction")
 		return
 	}
 	defer func() {
@@ -156,17 +174,14 @@ func (h *AuthHandler) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	qtx := h.queries.WithTx(tx)
 
 	now := time.Now()
-	verifiedAt := pgtype.Timestamptz{Time: now, Valid: true}
-
 	user, err := qtx.CreateUser(r.Context(), dbgen.CreateUserParams{
-		DivisionID:      invitation.DivisionID,
 		Email:           invitation.Email,
-		PasswordHash:    pgtype.Text{String: passwordHash, Valid: true},
-		Role:            invitation.Role,
-		Name:            req.Name,
-		PhoneNumber:     pgtype.Text{String: req.PhoneNumber, Valid: req.PhoneNumber != ""},
+		Name:            name,
+		PasswordHash:    pgtype.Text{String: hashedPassword, Valid: true},
+		PhoneNumber:     phoneParam,
+		PfpExternalUrl:  pgtype.Text{Valid: false},
 		IsActive:        true,
-		EmailVerifiedAt: verifiedAt,
+		EmailVerifiedAt: pgtype.Timestamptz{Time: now, Valid: true},
 	})
 	if err != nil {
 		if response.HandleDBError(w, r, err) {
@@ -176,62 +191,60 @@ func (h *AuthHandler) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	_, err = qtx.CreateStaff(r.Context(), dbgen.CreateStaffParams{
+		UserID:     user.ID,
+		DivisionID: invitation.DivisionID,
+		Role:       invitation.Role,
+	})
+	if err != nil {
+		if response.HandleDBError(w, r, err) {
+			return
+		}
+		response.InternalServerError(w, r, err, "Failed to assign staff record")
+		return
+	}
+
 	_, err = qtx.MarkInvitationAccepted(r.Context(), invitation.ID)
 	if err != nil {
 		response.InternalServerError(w, r, err, "Failed to update invitation status")
 		return
 	}
 
-	accessExpiry := h.getAccessExpiry()
-	refreshExpiry := h.getRefreshExpiry()
-
-	accessToken, err := auth.SignAccessToken(user.ID, user.Email, string(user.Role), user.DivisionID, h.cfg.AppConfig.JWTSecret, accessExpiry)
-	if err != nil {
-		response.InternalServerError(w, r, err, "Failed to generate access token")
-		return
-	}
-
-	rawRefreshToken, refreshTokenHash, err := auth.GenerateSecureToken()
-	if err != nil {
-		response.InternalServerError(w, r, err, "Failed to generate refresh token")
-		return
-	}
-
-	_, err = qtx.CreateRefreshToken(r.Context(), dbgen.CreateRefreshTokenParams{
-		UserID:    user.ID,
-		TokenHash: refreshTokenHash,
-		ExpiresAt: now.Add(refreshExpiry),
+	session, err := IssueUserSession(r.Context(), qtx, h.cfg, UserSessionParams{
+		UserID:     user.ID,
+		Email:      user.Email,
+		IsStaff:    true,
+		Role:       string(invitation.Role),
+		DivisionID: invitation.DivisionID,
+		IsHero:     false,
 	})
 	if err != nil {
-		response.InternalServerError(w, r, err, "Failed to store refresh token")
+		response.InternalServerError(w, r, err, "Failed to issue authentication session")
 		return
 	}
 
 	if err := tx.Commit(r.Context()); err != nil {
-		response.InternalServerError(w, r, err, "Failed to commit registration")
+		response.InternalServerError(w, r, err, "Failed to complete user registration")
 		return
 	}
 
-	var verifiedAtStr *string
-	if user.EmailVerifiedAt.Valid {
-		formatted := user.EmailVerifiedAt.Time.Format(time.RFC3339)
-		verifiedAtStr = &formatted
-	}
-
 	response.Success(w, http.StatusCreated, "User registered successfully", AuthTokenResponse{
-		AccessToken:  accessToken,
-		RefreshToken: rawRefreshToken,
-		ExpiresIn:    int64(accessExpiry.Seconds()),
-		User: UserResponse{
-			ID:              user.ID.String(),
-			Email:           user.Email,
-			Role:            string(user.Role),
-			DivisionID:      user.DivisionID,
-			Name:            user.Name,
-			PhoneNumber:     user.PhoneNumber.String,
-			IsActive:        user.IsActive,
-			EmailVerifiedAt: verifiedAtStr,
-		},
+		AccessToken:  session.AccessToken,
+		RefreshToken: session.RefreshToken,
+		ExpiresIn:    int64(session.AccessExpiry.Seconds()),
+		User: ToUserResponse(
+			user.ID,
+			user.Email,
+			user.Name,
+			user.PhoneNumber,
+			user.IsActive,
+			true,
+			string(invitation.Role),
+			invitation.DivisionID,
+			invitation.DivisionName,
+			false,
+			user.EmailVerifiedAt,
+		),
 	})
 }
 
@@ -248,6 +261,8 @@ func (h *AuthHandler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	fieldErrors := make(map[string]string)
 	if req.Email == "" {
 		fieldErrors["email"] = "Email is required"
+	} else if !auth.IsValidEmail(req.Email) {
+		fieldErrors["email"] = "Invalid email format"
 	}
 	if req.Password == "" {
 		fieldErrors["password"] = "Password is required"
@@ -257,7 +272,7 @@ func (h *AuthHandler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.queries.GetUserByEmail(r.Context(), req.Email)
+	user, err := h.queries.GetUserWithRolesByEmail(r.Context(), req.Email)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			response.SetError(r.Context(), fmt.Errorf("user not found with email %s", req.Email))
@@ -268,64 +283,44 @@ func (h *AuthHandler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !user.IsActive {
-		response.SetError(r.Context(), fmt.Errorf("account %s is deactivated", user.ID))
-		response.Forbidden(w, r, "Account has been deactivated. Please contact support.")
-		return
-	}
-
 	if !user.PasswordHash.Valid || !auth.CheckPassword(req.Password, user.PasswordHash.String) {
 		response.SetError(r.Context(), fmt.Errorf("invalid password for user %s (%s)", user.ID, user.Email))
 		response.Unauthorized(w, r, "Invalid email or password")
 		return
 	}
 
-	accessExpiry := h.getAccessExpiry()
-	refreshExpiry := h.getRefreshExpiry()
-
-	accessToken, err := auth.SignAccessToken(user.ID, user.Email, string(user.Role), user.DivisionID, h.cfg.AppConfig.JWTSecret, accessExpiry)
-	if err != nil {
-		response.InternalServerError(w, r, err, "Failed to generate access token")
+	if !user.IsActive {
+		response.SetError(r.Context(), fmt.Errorf("account %s is deactivated", user.ID))
+		response.Forbidden(w, r, "Account has been deactivated. Please contact support.")
 		return
 	}
 
-	rawRefreshToken, refreshTokenHash, err := auth.GenerateSecureToken()
-	if err != nil {
-		response.InternalServerError(w, r, err, "Failed to generate refresh token")
+	if !user.EmailVerifiedAt.Valid {
+		response.SetError(r.Context(), fmt.Errorf("unverified user %s attempted login", user.ID))
+		response.ErrorWithRequest(w, r, http.StatusForbidden, "EMAIL_NOT_VERIFIED", "Please verify your email address before logging in.", nil)
 		return
 	}
 
-	now := time.Now()
-	_, err = h.queries.CreateRefreshToken(r.Context(), dbgen.CreateRefreshTokenParams{
-		UserID:    user.ID,
-		TokenHash: refreshTokenHash,
-		ExpiresAt: now.Add(refreshExpiry),
+	roleStr, divID := ExtractStaffClaims(user.IsStaff, user.StaffRole, user.StaffDivisionID)
+
+	session, err := IssueUserSession(r.Context(), h.queries, h.cfg, UserSessionParams{
+		UserID:     user.ID,
+		Email:      user.Email,
+		IsStaff:    user.IsStaff,
+		Role:       roleStr,
+		DivisionID: divID,
+		IsHero:     user.IsHero,
 	})
 	if err != nil {
-		response.InternalServerError(w, r, err, "Failed to record refresh token")
+		response.InternalServerError(w, r, err, "Failed to issue authentication session")
 		return
-	}
-
-	var verifiedAtStr *string
-	if user.EmailVerifiedAt.Valid {
-		formatted := user.EmailVerifiedAt.Time.Format(time.RFC3339)
-		verifiedAtStr = &formatted
 	}
 
 	response.Success(w, http.StatusOK, "Login successful", AuthTokenResponse{
-		AccessToken:  accessToken,
-		RefreshToken: rawRefreshToken,
-		ExpiresIn:    int64(accessExpiry.Seconds()),
-		User: UserResponse{
-			ID:              user.ID.String(),
-			Email:           user.Email,
-			Role:            string(user.Role),
-			DivisionID:      user.DivisionID,
-			Name:            user.Name,
-			PhoneNumber:     user.PhoneNumber.String,
-			IsActive:        user.IsActive,
-			EmailVerifiedAt: verifiedAtStr,
-		},
+		AccessToken:  session.AccessToken,
+		RefreshToken: session.RefreshToken,
+		ExpiresIn:    int64(session.AccessExpiry.Seconds()),
+		User:         UserResponseFromRolesByEmail(user),
 	})
 }
 
@@ -369,7 +364,7 @@ func (h *AuthHandler) RefreshTokenHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	user, err := h.queries.GetUserByID(r.Context(), storedToken.UserID)
+	user, err := h.queries.GetUserWithRolesByID(r.Context(), storedToken.UserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			response.SetError(r.Context(), fmt.Errorf("user %s associated with refresh token no longer exists", storedToken.UserID))
@@ -403,28 +398,18 @@ func (h *AuthHandler) RefreshTokenHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	accessExpiry := h.getAccessExpiry()
-	refreshExpiry := h.getRefreshExpiry()
+	roleStr, divID := ExtractStaffClaims(user.IsStaff, user.StaffRole, user.StaffDivisionID)
 
-	newAccessToken, err := auth.SignAccessToken(user.ID, user.Email, string(user.Role), user.DivisionID, h.cfg.AppConfig.JWTSecret, accessExpiry)
-	if err != nil {
-		response.InternalServerError(w, r, err, "Failed to generate new access token")
-		return
-	}
-
-	newRawRefreshToken, newRefreshTokenHash, err := auth.GenerateSecureToken()
-	if err != nil {
-		response.InternalServerError(w, r, err, "Failed to generate new refresh token")
-		return
-	}
-
-	_, err = qtx.CreateRefreshToken(r.Context(), dbgen.CreateRefreshTokenParams{
-		UserID:    user.ID,
-		TokenHash: newRefreshTokenHash,
-		ExpiresAt: now.Add(refreshExpiry),
+	session, err := IssueUserSession(r.Context(), qtx, h.cfg, UserSessionParams{
+		UserID:     user.ID,
+		Email:      user.Email,
+		IsStaff:    user.IsStaff,
+		Role:       roleStr,
+		DivisionID: divID,
+		IsHero:     user.IsHero,
 	})
 	if err != nil {
-		response.InternalServerError(w, r, err, "Failed to record new refresh token")
+		response.InternalServerError(w, r, err, "Failed to rotate authentication session")
 		return
 	}
 
@@ -434,9 +419,9 @@ func (h *AuthHandler) RefreshTokenHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	response.Success(w, http.StatusOK, "Token refreshed successfully", RefreshTokenResponse{
-		AccessToken:  newAccessToken,
-		RefreshToken: newRawRefreshToken,
-		ExpiresIn:    int64(accessExpiry.Seconds()),
+		AccessToken:  session.AccessToken,
+		RefreshToken: session.RefreshToken,
+		ExpiresIn:    int64(session.AccessExpiry.Seconds()),
 	})
 }
 
@@ -463,18 +448,4 @@ func (h *AuthHandler) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.Success(w, http.StatusOK, "Logged out successfully", nil)
-}
-
-func (h *AuthHandler) getAccessExpiry() time.Duration {
-	if h.cfg != nil && h.cfg.AppConfig.JWTAccessExpiry > 0 {
-		return h.cfg.AppConfig.JWTAccessExpiry
-	}
-	return 15 * time.Minute
-}
-
-func (h *AuthHandler) getRefreshExpiry() time.Duration {
-	if h.cfg != nil && h.cfg.AppConfig.JWTRefreshExpiry > 0 {
-		return h.cfg.AppConfig.JWTRefreshExpiry
-	}
-	return 7 * 24 * time.Hour
 }

@@ -51,21 +51,6 @@ func (q *Queries) CreateOAuthAccount(ctx context.Context, arg CreateOAuthAccount
 	return i, err
 }
 
-const deleteOAuthAccount = `-- name: DeleteOAuthAccount :exec
-DELETE FROM oauth_accounts
-WHERE user_id = $1 AND provider = $2
-`
-
-type DeleteOAuthAccountParams struct {
-	UserID   uuid.UUID
-	Provider string
-}
-
-func (q *Queries) DeleteOAuthAccount(ctx context.Context, arg DeleteOAuthAccountParams) error {
-	_, err := q.db.Exec(ctx, deleteOAuthAccount, arg.UserID, arg.Provider)
-	return err
-}
-
 const getOAuthAccountByProvider = `-- name: GetOAuthAccountByProvider :one
 SELECT 
     oa.id,
@@ -74,14 +59,20 @@ SELECT
     oa.provider_user_id,
     oa.email,
     oa.created_at,
-    u.division_id,
-    u.role,
     u.name,
     u.phone_number,
     u.is_active,
-    u.email_verified_at
+    u.email_verified_at,
+    s.role AS staff_role,
+    s.division_id AS staff_division_id,
+    d.name AS staff_division_name,
+    (s.user_id IS NOT NULL)::BOOLEAN AS is_staff,
+    (h.user_id IS NOT NULL)::BOOLEAN AS is_hero
 FROM oauth_accounts oa
 JOIN users u ON u.id = oa.user_id
+LEFT JOIN staff s ON s.user_id = u.id
+LEFT JOIN divisions d ON d.id = s.division_id AND d.deleted_at IS NULL
+LEFT JOIN heroes h ON h.user_id = u.id
 WHERE oa.provider = $1 AND oa.provider_user_id = $2 AND u.deleted_at IS NULL
 LIMIT 1
 `
@@ -92,18 +83,21 @@ type GetOAuthAccountByProviderParams struct {
 }
 
 type GetOAuthAccountByProviderRow struct {
-	ID              int64
-	UserID          uuid.UUID
-	Provider        string
-	ProviderUserID  string
-	Email           string
-	CreatedAt       time.Time
-	DivisionID      int32
-	Role            UserRole
-	Name            string
-	PhoneNumber     pgtype.Text
-	IsActive        bool
-	EmailVerifiedAt pgtype.Timestamptz
+	ID                uuid.UUID
+	UserID            uuid.UUID
+	Provider          string
+	ProviderUserID    string
+	Email             string
+	CreatedAt         time.Time
+	Name              string
+	PhoneNumber       pgtype.Text
+	IsActive          bool
+	EmailVerifiedAt   pgtype.Timestamptz
+	StaffRole         NullUserRole
+	StaffDivisionID   pgtype.Int4
+	StaffDivisionName pgtype.Text
+	IsStaff           bool
+	IsHero            bool
 }
 
 func (q *Queries) GetOAuthAccountByProvider(ctx context.Context, arg GetOAuthAccountByProviderParams) (GetOAuthAccountByProviderRow, error) {
@@ -116,46 +110,15 @@ func (q *Queries) GetOAuthAccountByProvider(ctx context.Context, arg GetOAuthAcc
 		&i.ProviderUserID,
 		&i.Email,
 		&i.CreatedAt,
-		&i.DivisionID,
-		&i.Role,
 		&i.Name,
 		&i.PhoneNumber,
 		&i.IsActive,
 		&i.EmailVerifiedAt,
+		&i.StaffRole,
+		&i.StaffDivisionID,
+		&i.StaffDivisionName,
+		&i.IsStaff,
+		&i.IsHero,
 	)
 	return i, err
-}
-
-const getOAuthAccountsByUserID = `-- name: GetOAuthAccountsByUserID :many
-SELECT id, user_id, provider, provider_user_id, email, created_at
-FROM oauth_accounts
-WHERE user_id = $1
-ORDER BY created_at ASC
-`
-
-func (q *Queries) GetOAuthAccountsByUserID(ctx context.Context, userID uuid.UUID) ([]OauthAccount, error) {
-	rows, err := q.db.Query(ctx, getOAuthAccountsByUserID, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []OauthAccount
-	for rows.Next() {
-		var i OauthAccount
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.Provider,
-			&i.ProviderUserID,
-			&i.Email,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }

@@ -27,6 +27,8 @@ func HandleDBError(w http.ResponseWriter, r *http.Request, err error) bool {
 	case "23505": // unique_violation
 		fieldErrors := make(map[string]string)
 		switch {
+		case strings.Contains(pgErr.ConstraintName, "beneficiary_categories_active_email_domain") || strings.Contains(pgErr.ConstraintName, "email_domain"):
+			fieldErrors["email_domain"] = "Email domain is already registered"
 		case strings.Contains(pgErr.ConstraintName, "phone"):
 			fieldErrors["phone_number"] = "Phone number is already registered"
 		case strings.Contains(pgErr.ConstraintName, "email"):
@@ -56,10 +58,27 @@ func HandleDBError(w http.ResponseWriter, r *http.Request, err error) bool {
 			fieldErrors["payment_proof"] = "Referenced payment proof file does not exist"
 		case strings.Contains(pgErr.ConstraintName, "reimbursement_files_file_id"):
 			fieldErrors["file_id"] = "Referenced receipt file does not exist"
+		case strings.Contains(pgErr.ConstraintName, "paid_by"):
+			fieldErrors["paid_by"] = "Referenced staff member does not exist"
 		case strings.Contains(pgErr.ConstraintName, "user_id"):
 			fieldErrors["user_id"] = "Referenced user does not exist"
 		default:
 			fieldErrors["general"] = "Referenced resource does not exist"
+		}
+		ErrorWithRequest(w, r, http.StatusBadRequest, "VAL_002", "Validation failed", fieldErrors)
+		return true
+
+	case "23514": // check_violation
+		fieldErrors := make(map[string]string)
+		switch {
+		case strings.Contains(pgErr.ConstraintName, "chk_email_domain_university_only"):
+			fieldErrors["email_domain"] = "Email domain can only be set for university variant"
+		case strings.Contains(pgErr.ConstraintName, "chk_email_domain_lowercase"):
+			fieldErrors["email_domain"] = "Email domain must be lowercase"
+		case strings.Contains(pgErr.ConstraintName, "variant"):
+			fieldErrors["variant"] = "Invalid variant"
+		default:
+			fieldErrors["general"] = "Check constraint violation"
 		}
 		ErrorWithRequest(w, r, http.StatusBadRequest, "VAL_002", "Validation failed", fieldErrors)
 		return true

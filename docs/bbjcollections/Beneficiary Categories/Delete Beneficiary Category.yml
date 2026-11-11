@@ -8,7 +8,7 @@ http:
   url: "{{base_url}}/beneficiary-categories/:id"
   params:
     - name: id
-      value: f3262c29-5880-467d-a3a6-da00c38fa7c3
+      value: 9059f752-77ca-436f-8b0d-70b7b85442ce
       type: path
   auth: inherit
 
@@ -25,7 +25,7 @@ examples:
       method: DELETE
       params:
         - name: id
-          value: f3262c29-5880-467d-a3a6-da00c38fa7c3
+          value: 9059f752-77ca-436f-8b0d-70b7b85442ce
           type: path
     response:
       status: 200
@@ -50,11 +50,11 @@ examples:
         - name: x-frame-options
           value: DENY
         - name: x-request-id
-          value: ref_cd3bd942
+          value: ref_307c8761
         - name: x-xss-protection
           value: 1; mode=block
         - name: date
-          value: Fri, 06 Nov 2026 18:42:59 GMT
+          value: Wed, 11 Nov 2026 02:10:26 GMT
         - name: content-length
           value: "128"
       body:
@@ -64,6 +64,6 @@ examples:
             "status": "success",
             "message": "Beneficiary category deleted successfully",
             "data": {
-              "id": "f3262c29-5880-467d-a3a6-da00c38fa7c3"
+              "id": "9059f752-77ca-436f-8b0d-70b7b85442ce"
             }
           }

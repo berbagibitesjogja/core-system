@@ -92,6 +92,29 @@ func (h *OAuthHandler) GoogleLoginHandler(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
 }
 
+type oauthInvitationInfo struct {
+	ID           uuid.UUID
+	Role         dbgen.UserRole
+	DivisionID   int32
+	DivisionName string
+	Name         pgtype.Text
+	PhoneNumber  pgtype.Text
+}
+
+type OAuthUserClaims struct {
+	UserID          uuid.UUID
+	Email           string
+	Name            string
+	PhoneNumber     pgtype.Text
+	IsActive        bool
+	IsStaff         bool
+	Role            string
+	DivisionID      int32
+	DivisionName    string
+	IsHero          bool
+	EmailVerifiedAt pgtype.Timestamptz
+}
+
 func (h *OAuthHandler) GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 	isProd := h.config.AppConfig.Env == "production"
 	defer auth.ClearOAuthStateCookie(w, isProd)
@@ -143,6 +166,28 @@ func (h *OAuthHandler) GoogleCallbackHandler(w http.ResponseWriter, r *http.Requ
 	defer tx.Rollback(r.Context())
 	qtx := h.queries.WithTx(tx)
 
+	var verifiedInvitation *oauthInvitationInfo
+	if invitationToken != "" {
+		tokenHash := auth.HashToken(invitationToken)
+		inv, err := qtx.GetInvitationByTokenHash(r.Context(), tokenHash)
+		if err != nil || inv.AcceptedAt.Valid || !inv.ExpiresAt.After(time.Now()) {
+			h.deliverAuthError(w, r, http.StatusBadRequest, "INVITATION_INVALID", "Invitation token is invalid or expired", fmt.Errorf("invalid or expired invitation token"))
+			return
+		}
+		if !strings.EqualFold(strings.TrimSpace(userInfo.Email), strings.TrimSpace(inv.Email)) {
+			h.deliverAuthError(w, r, http.StatusForbidden, "INVITATION_EMAIL_MISMATCH", "This invitation was issued to a different email address", fmt.Errorf("oauth email %s does not match invitation email %s", userInfo.Email, inv.Email))
+			return
+		}
+		verifiedInvitation = &oauthInvitationInfo{
+			ID:           inv.ID,
+			Role:         inv.Role,
+			DivisionID:   inv.DivisionID,
+			DivisionName: inv.DivisionName,
+			Name:         inv.Name,
+			PhoneNumber:  inv.PhoneNumber,
+		}
+	}
+
 	linked, err := qtx.GetOAuthAccountByProvider(r.Context(), dbgen.GetOAuthAccountByProviderParams{
 		Provider:       "google",
 		ProviderUserID: userInfo.Sub,
@@ -153,7 +198,66 @@ func (h *OAuthHandler) GoogleCallbackHandler(w http.ResponseWriter, r *http.Requ
 			return
 		}
 
-		userResp, accessToken, rawRefreshToken, accessExpiry, err := h.issueAuthTokens(r.Context(), qtx, linked.UserID, userInfo.Email, string(linked.Role), linked.DivisionID, linked.Name, linked.PhoneNumber, linked.IsActive, linked.EmailVerifiedAt)
+		var staffRole string
+		if linked.StaffRole.Valid {
+			staffRole = string(linked.StaffRole.UserRole)
+		}
+		var staffDivisionID int32
+		var staffDivisionName string
+		if linked.StaffDivisionID.Valid {
+			staffDivisionID = linked.StaffDivisionID.Int32
+		}
+		if linked.StaffDivisionName.Valid {
+			staffDivisionName = linked.StaffDivisionName.String
+		}
+
+		if !linked.IsStaff {
+			var activeInv *oauthInvitationInfo
+			if verifiedInvitation != nil {
+				activeInv = verifiedInvitation
+			} else if inv, invErr := qtx.GetActiveInvitationByEmail(r.Context(), userInfo.Email); invErr == nil {
+				activeInv = &oauthInvitationInfo{
+					ID:           inv.ID,
+					Role:         inv.Role,
+					DivisionID:   inv.DivisionID,
+					DivisionName: inv.DivisionName,
+					Name:         inv.Name,
+					PhoneNumber:  inv.PhoneNumber,
+				}
+			}
+			if activeInv != nil {
+				_, err = qtx.CreateStaff(r.Context(), dbgen.CreateStaffParams{
+					UserID:     linked.UserID,
+					DivisionID: activeInv.DivisionID,
+					Role:       activeInv.Role,
+				})
+				if err == nil {
+					linked.IsStaff = true
+					linked.StaffRole = dbgen.NullUserRole{UserRole: activeInv.Role, Valid: true}
+					linked.StaffDivisionID = pgtype.Int4{Int32: activeInv.DivisionID, Valid: true}
+					staffRole = string(activeInv.Role)
+					staffDivisionID = activeInv.DivisionID
+					staffDivisionName = activeInv.DivisionName
+					_, _ = qtx.MarkInvitationAccepted(r.Context(), activeInv.ID)
+				}
+			}
+		}
+
+		userResp, accessToken, rawRefreshToken, accessExpiry, err := h.issueAuthTokens(
+			r.Context(), qtx, OAuthUserClaims{
+				UserID:          linked.UserID,
+				Email:           userInfo.Email,
+				Name:            linked.Name,
+				PhoneNumber:     linked.PhoneNumber,
+				IsActive:        linked.IsActive,
+				IsStaff:         linked.IsStaff,
+				Role:            staffRole,
+				DivisionID:      staffDivisionID,
+				DivisionName:    staffDivisionName,
+				IsHero:          linked.IsHero,
+				EmailVerifiedAt: linked.EmailVerifiedAt,
+			},
+		)
 		if err != nil {
 			h.deliverAuthError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to issue authentication tokens", err)
 			return
@@ -168,10 +272,10 @@ func (h *OAuthHandler) GoogleCallbackHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	existingUser, err := qtx.GetUserByEmail(r.Context(), userInfo.Email)
+	existingUser, err := qtx.GetUserWithRolesByEmail(r.Context(), userInfo.Email)
 	if err == nil {
 		if !existingUser.IsActive {
-			h.deliverAuthError(w, r, http.StatusUnauthorized, "ACCOUNT_DEACTIVATED", "Your account has been deactivated", fmt.Errorf("deactivated user attempted oauth auto-link: %s", existingUser.ID))
+			h.deliverAuthError(w, r, http.StatusUnauthorized, "ACCOUNT_DEACTIVATED", "Your account has been deactivated", fmt.Errorf("deactivated user attempted oauth login: %s", existingUser.ID))
 			return
 		}
 
@@ -187,11 +291,73 @@ func (h *OAuthHandler) GoogleCallbackHandler(w http.ResponseWriter, r *http.Requ
 		}
 
 		if !existingUser.EmailVerifiedAt.Valid {
+			now := time.Now()
 			_ = qtx.MarkEmailVerified(r.Context(), existingUser.ID)
-			existingUser.EmailVerifiedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
+			_ = qtx.ClearUserPassword(r.Context(), existingUser.ID)
+			_ = qtx.RevokeAllUserRefreshTokens(r.Context(), existingUser.ID)
+			existingUser.EmailVerifiedAt = pgtype.Timestamptz{Time: now, Valid: true}
 		}
 
-		userResp, accessToken, rawRefreshToken, accessExpiry, err := h.issueAuthTokens(r.Context(), qtx, existingUser.ID, existingUser.Email, string(existingUser.Role), existingUser.DivisionID, existingUser.Name, existingUser.PhoneNumber, existingUser.IsActive, existingUser.EmailVerifiedAt)
+		var staffRole string
+		if existingUser.StaffRole.Valid {
+			staffRole = string(existingUser.StaffRole.UserRole)
+		}
+		var staffDivisionID int32
+		var staffDivisionName string
+		if existingUser.StaffDivisionID.Valid {
+			staffDivisionID = existingUser.StaffDivisionID.Int32
+		}
+		if existingUser.StaffDivisionName.Valid {
+			staffDivisionName = existingUser.StaffDivisionName.String
+		}
+
+		if !existingUser.IsStaff {
+			var activeInv *oauthInvitationInfo
+			if verifiedInvitation != nil {
+				activeInv = verifiedInvitation
+			} else if inv, invErr := qtx.GetActiveInvitationByEmail(r.Context(), userInfo.Email); invErr == nil {
+				activeInv = &oauthInvitationInfo{
+					ID:           inv.ID,
+					Role:         inv.Role,
+					DivisionID:   inv.DivisionID,
+					DivisionName: inv.DivisionName,
+					Name:         inv.Name,
+					PhoneNumber:  inv.PhoneNumber,
+				}
+			}
+			if activeInv != nil {
+				_, err = qtx.CreateStaff(r.Context(), dbgen.CreateStaffParams{
+					UserID:     existingUser.ID,
+					DivisionID: activeInv.DivisionID,
+					Role:       activeInv.Role,
+				})
+				if err == nil {
+					existingUser.IsStaff = true
+					existingUser.StaffRole = dbgen.NullUserRole{UserRole: activeInv.Role, Valid: true}
+					existingUser.StaffDivisionID = pgtype.Int4{Int32: activeInv.DivisionID, Valid: true}
+					staffRole = string(activeInv.Role)
+					staffDivisionID = activeInv.DivisionID
+					staffDivisionName = activeInv.DivisionName
+				}
+				_, _ = qtx.MarkInvitationAccepted(r.Context(), activeInv.ID)
+			}
+		}
+
+		userResp, accessToken, rawRefreshToken, accessExpiry, err := h.issueAuthTokens(
+			r.Context(), qtx, OAuthUserClaims{
+				UserID:          existingUser.ID,
+				Email:           existingUser.Email,
+				Name:            existingUser.Name,
+				PhoneNumber:     existingUser.PhoneNumber,
+				IsActive:        existingUser.IsActive,
+				IsStaff:         existingUser.IsStaff,
+				Role:            staffRole,
+				DivisionID:      staffDivisionID,
+				DivisionName:    staffDivisionName,
+				IsHero:          existingUser.IsHero,
+				EmailVerifiedAt: existingUser.EmailVerifiedAt,
+			},
+		)
 		if err != nil {
 			h.deliverAuthError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to issue authentication tokens", err)
 			return
@@ -206,48 +372,56 @@ func (h *OAuthHandler) GoogleCallbackHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var invitation dbgen.UserInvitation
-	var inviteFound bool
-
-	if invitationToken != "" {
-		tokenHash := auth.HashToken(invitationToken)
-		inv, err := qtx.GetInvitationByTokenHash(r.Context(), tokenHash)
-		if err == nil && !inv.AcceptedAt.Valid && inv.ExpiresAt.After(time.Now()) {
-			invitation = inv
-			inviteFound = true
+	var invitation *oauthInvitationInfo
+	if verifiedInvitation != nil {
+		invitation = verifiedInvitation
+	} else if inv, invErr := qtx.GetActiveInvitationByEmail(r.Context(), userInfo.Email); invErr == nil {
+		invitation = &oauthInvitationInfo{
+			ID:           inv.ID,
+			Role:         inv.Role,
+			DivisionID:   inv.DivisionID,
+			DivisionName: inv.DivisionName,
+			Name:         inv.Name,
+			PhoneNumber:  inv.PhoneNumber,
 		}
 	}
 
-	if !inviteFound {
-		inv, err := qtx.GetActiveInvitationByEmail(r.Context(), userInfo.Email)
-		if err == nil {
-			invitation = inv
-			inviteFound = true
+	if invitation != nil {
+		staffName := strings.TrimSpace(userInfo.Name)
+		if invitation.Name.Valid && invitation.Name.String != "" {
+			staffName = invitation.Name.String
 		}
-	}
+		if staffName == "" {
+			staffName = userInfo.Email
+		}
 
-	if inviteFound {
-		finalName := strings.TrimSpace(invitation.Name.String)
-		if finalName == "" {
-			finalName = strings.TrimSpace(userInfo.Name)
-		}
-		if finalName == "" {
-			parts := strings.Split(userInfo.Email, "@")
-			finalName = parts[0]
+		var pfpParam pgtype.Text
+		if userInfo.Picture != "" {
+			pfpParam = pgtype.Text{String: userInfo.Picture, Valid: true}
 		}
 
 		now := time.Now()
 		newUser, err := qtx.CreateUser(r.Context(), dbgen.CreateUserParams{
-			DivisionID:      invitation.DivisionID,
-			Email:           invitation.Email,
-			Role:            invitation.Role,
-			Name:            finalName,
+			Email:           userInfo.Email,
+			Name:            staffName,
+			PasswordHash:    pgtype.Text{Valid: false},
 			PhoneNumber:     invitation.PhoneNumber,
+			PfpExternalUrl:  pfpParam,
 			IsActive:        true,
 			EmailVerifiedAt: pgtype.Timestamptz{Time: now, Valid: true},
 		})
 		if err != nil {
-			h.deliverAuthError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to register user from invitation", err)
+			h.deliverAuthError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create staff account", err)
+			return
+		}
+
+		_, err = qtx.CreateStaff(r.Context(), dbgen.CreateStaffParams{
+			UserID:     newUser.ID,
+			DivisionID: invitation.DivisionID,
+			Role:       invitation.Role,
+		})
+		if err != nil {
+			h.deliverAuthError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to assign staff record", err)
 			return
 		}
 
@@ -268,7 +442,21 @@ func (h *OAuthHandler) GoogleCallbackHandler(w http.ResponseWriter, r *http.Requ
 			return
 		}
 
-		userResp, accessToken, rawRefreshToken, accessExpiry, err := h.issueAuthTokens(r.Context(), qtx, newUser.ID, newUser.Email, string(newUser.Role), newUser.DivisionID, newUser.Name, newUser.PhoneNumber, newUser.IsActive, newUser.EmailVerifiedAt)
+		userResp, accessToken, rawRefreshToken, accessExpiry, err := h.issueAuthTokens(
+			r.Context(), qtx, OAuthUserClaims{
+				UserID:          newUser.ID,
+				Email:           newUser.Email,
+				Name:            newUser.Name,
+				PhoneNumber:     newUser.PhoneNumber,
+				IsActive:        newUser.IsActive,
+				IsStaff:         true,
+				Role:            string(invitation.Role),
+				DivisionID:      invitation.DivisionID,
+				DivisionName:    invitation.DivisionName,
+				IsHero:          false,
+				EmailVerifiedAt: newUser.EmailVerifiedAt,
+			},
+		)
 		if err != nil {
 			h.deliverAuthError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to issue authentication tokens", err)
 			return
@@ -283,51 +471,119 @@ func (h *OAuthHandler) GoogleCallbackHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	h.deliverAuthError(w, r, http.StatusForbidden, "UNINVITED_USER", "System is invite-only. No active invitation found for this Google email.", fmt.Errorf("uninvited stranger rejected during google oauth: %s", userInfo.Email))
-}
-
-func (h *OAuthHandler) issueAuthTokens(ctx context.Context, qtx *dbgen.Queries, userID uuid.UUID, email, role string, divisionID int32, name string, phone pgtype.Text, isActive bool, emailVerifiedAt pgtype.Timestamptz) (UserResponse, string, string, time.Duration, error) {
-	accessExpiry := h.config.AppConfig.JWTAccessExpiry
-	accessToken, err := auth.SignAccessToken(userID, email, role, divisionID, h.config.AppConfig.JWTSecret, accessExpiry)
-	if err != nil {
-		return UserResponse{}, "", "", 0, fmt.Errorf("failed to sign access token: %w", err)
+	finalName := strings.TrimSpace(userInfo.Name)
+	if finalName == "" {
+		finalName = userInfo.Email
 	}
 
-	rawRefreshToken, err := auth.GenerateRefreshToken()
-	if err != nil {
-		return UserResponse{}, "", "", 0, fmt.Errorf("failed to generate refresh token: %w", err)
+	var pfpParam pgtype.Text
+	if userInfo.Picture != "" {
+		pfpParam = pgtype.Text{String: userInfo.Picture, Valid: true}
 	}
 
-	tokenHash := auth.HashToken(rawRefreshToken)
-	refreshExpiry := time.Now().Add(h.config.AppConfig.JWTRefreshExpiry)
-
-	_, err = qtx.CreateRefreshToken(ctx, dbgen.CreateRefreshTokenParams{
-		UserID:    userID,
-		TokenHash: tokenHash,
-		ExpiresAt: refreshExpiry,
+	now := time.Now()
+	newHeroUser, err := qtx.CreateUser(r.Context(), dbgen.CreateUserParams{
+		Email:           userInfo.Email,
+		Name:            finalName,
+		PasswordHash:    pgtype.Text{Valid: false},
+		PhoneNumber:     pgtype.Text{Valid: false},
+		PfpExternalUrl:  pfpParam,
+		IsActive:        true,
+		EmailVerifiedAt: pgtype.Timestamptz{Time: now, Valid: true},
 	})
 	if err != nil {
-		return UserResponse{}, "", "", 0, fmt.Errorf("failed to store refresh token: %w", err)
+		h.deliverAuthError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create hero user", err)
+		return
 	}
 
-	var verifiedAtStr *string
-	if emailVerifiedAt.Valid {
-		formatted := emailVerifiedAt.Time.Format(time.RFC3339)
-		verifiedAtStr = &formatted
+	_, err = qtx.CreateHero(r.Context(), dbgen.CreateHeroParams{
+		UserID:     newHeroUser.ID,
+		RemindMeAt: pgtype.Timestamptz{Valid: false},
+	})
+	if err != nil {
+		h.deliverAuthError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create hero profile", err)
+		return
 	}
 
-	userResp := UserResponse{
-		ID:              userID.String(),
-		Email:           email,
-		Role:            role,
-		DivisionID:      divisionID,
-		Name:            name,
-		PhoneNumber:     phone.String,
-		IsActive:        isActive,
-		EmailVerifiedAt: verifiedAtStr,
+	_, err = qtx.CreateOAuthAccount(r.Context(), dbgen.CreateOAuthAccountParams{
+		UserID:         newHeroUser.ID,
+		Provider:       "google",
+		ProviderUserID: userInfo.Sub,
+		Email:          userInfo.Email,
+	})
+	if err != nil {
+		h.deliverAuthError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to link Google account", err)
+		return
 	}
 
-	return userResp, accessToken, rawRefreshToken, accessExpiry, nil
+	parts := strings.Split(userInfo.Email, "@")
+	if len(parts) == 2 {
+		domain := strings.ToLower(strings.TrimSpace(parts[1]))
+		matchedCat, matchErr := qtx.MatchUniversityCategoryByEmailDomain(r.Context(), domain)
+		if matchErr == nil {
+			_, _ = qtx.AddHeroCategory(r.Context(), dbgen.AddHeroCategoryParams{
+				HeroID:                newHeroUser.ID,
+				BeneficiaryCategoryID: matchedCat.ID,
+			})
+		}
+	}
+
+	userResp, accessToken, rawRefreshToken, accessExpiry, err := h.issueAuthTokens(
+		r.Context(), qtx, OAuthUserClaims{
+			UserID:          newHeroUser.ID,
+			Email:           newHeroUser.Email,
+			Name:            newHeroUser.Name,
+			PhoneNumber:     newHeroUser.PhoneNumber,
+			IsActive:        newHeroUser.IsActive,
+			IsStaff:         false,
+			Role:            "",
+			DivisionID:      0,
+			DivisionName:    "",
+			IsHero:          true,
+			EmailVerifiedAt: newHeroUser.EmailVerifiedAt,
+		},
+	)
+	if err != nil {
+		h.deliverAuthError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to issue authentication tokens", err)
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		h.deliverAuthError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to commit transaction", err)
+		return
+	}
+
+	h.deliverAuthTokens(w, r, accessToken, rawRefreshToken, accessExpiry, userResp)
+}
+
+func (h *OAuthHandler) issueAuthTokens(ctx context.Context, qtx *dbgen.Queries, claims OAuthUserClaims) (UserResponse, string, string, time.Duration, error) {
+	session, err := IssueUserSession(ctx, qtx, h.config, UserSessionParams{
+		UserID:     claims.UserID,
+		Email:      claims.Email,
+		IsStaff:    claims.IsStaff,
+		Role:       claims.Role,
+		DivisionID: claims.DivisionID,
+		IsHero:     claims.IsHero,
+	})
+	if err != nil {
+		return UserResponse{}, "", "", 0, fmt.Errorf("failed to issue session: %w", err)
+	}
+
+	userResp := ToUserResponse(
+		claims.UserID,
+		claims.Email,
+		claims.Name,
+		claims.PhoneNumber,
+		claims.IsActive,
+		claims.IsStaff,
+		claims.Role,
+		claims.DivisionID,
+		claims.DivisionName,
+		claims.IsHero,
+		claims.EmailVerifiedAt,
+	)
+
+	return userResp, session.AccessToken, session.RefreshToken, session.AccessExpiry, nil
 }
 
 func (h *OAuthHandler) isSeparateFrontend() bool {

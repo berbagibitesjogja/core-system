@@ -5,13 +5,13 @@ info:
 
 http:
   method: GET
-  url: "{{base_url}}/beneficiary-categories?page=1&limit=5&search=&variant=&hidden=false"
+  url: "{{base_url}}/beneficiary-categories?page=1&limit=50&search=&variant=&hidden=false"
   params:
     - name: page
       value: "1"
       type: query
     - name: limit
-      value: "5"
+      value: "50"
       type: query
     - name: search
       value: ""
@@ -33,14 +33,14 @@ settings:
 examples:
   - name: "200"
     request:
-      url: "{{base_url}}/beneficiary-categories?page=1&limit=5&search=&variant=&hidden=false"
+      url: "{{base_url}}/beneficiary-categories?page=1&limit=50&search=&variant=&hidden=false"
       method: GET
       params:
         - name: page
           value: "1"
           type: query
         - name: limit
-          value: "5"
+          value: "50"
           type: query
         - name: search
           value: ""
@@ -74,13 +74,13 @@ examples:
         - name: x-frame-options
           value: DENY
         - name: x-request-id
-          value: ref_ed3b1195
+          value: ref_a2c7b0bc
         - name: x-xss-protection
           value: 1; mode=block
         - name: date
-          value: Fri, 06 Nov 2026 18:41:20 GMT
-        - name: content-length
-          value: "1086"
+          value: Wed, 11 Nov 2026 02:06:41 GMT
+        - name: transfer-encoding
+          value: chunked
       body:
         type: json
         data: |-
@@ -89,50 +89,248 @@ examples:
             "message": "Beneficiary categories retrieved successfully",
             "data": [
               {
-                "id": "751bdc3f-9499-4525-8ec0-81a58a77a739",
+                "id": "8f0cd877-cdd1-4cd9-ac56-df71cd011dd7",
+                "name": "KIPK",
+                "variant": "kipk",
+                "is_priority": true,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "a0b2c71c-3d11-4a65-80fd-2351f1984c28",
                 "name": "BRSPA",
                 "variant": "shelter",
+                "is_priority": false,
                 "hidden": false,
-                "created_at": "2026-11-07T01:40:18+07:00",
-                "updated_at": "2026-11-07T01:40:18+07:00"
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
               },
               {
-                "id": "c3a9bbcf-77e1-4576-8f19-5fa022eb20aa",
+                "id": "8d0fb19e-a1fa-46eb-a7bc-7ca6582a0778",
                 "name": "Forkom Yogyakarta",
                 "variant": "society",
+                "is_priority": false,
                 "hidden": false,
-                "created_at": "2026-11-07T01:40:18+07:00",
-                "updated_at": "2026-11-07T01:40:18+07:00"
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
               },
               {
-                "id": "78dd2a1f-324e-43f8-a1c4-de468911f6a9",
+                "id": "bf437332-9b72-4194-a92f-e342c782cc83",
                 "name": "ISI Yogyakarta",
-                "variant": "student",
+                "variant": "university",
+                "email_domain": "isi.ac.id",
+                "is_priority": false,
                 "hidden": false,
-                "created_at": "2026-11-07T01:40:18+07:00",
-                "updated_at": "2026-11-07T01:40:18+07:00"
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
               },
               {
-                "id": "65749a4e-31bd-43ab-bf7a-02e9d3cd347d",
+                "id": "2966e3e3-5eec-4f38-bcde-6ea7fbf640b1",
                 "name": "Masyarakat Umum",
                 "variant": "society",
+                "is_priority": false,
                 "hidden": false,
-                "created_at": "2026-11-07T01:40:18+07:00",
-                "updated_at": "2026-11-07T01:40:18+07:00"
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
               },
               {
-                "id": "5d123028-fea0-4f4e-b688-794b5a0d2971",
+                "id": "823c6b09-f6c8-469f-aeca-8f266a26420e",
                 "name": "Panti Asuhan Ibadah Bunda",
                 "variant": "orphanage",
+                "is_priority": false,
                 "hidden": false,
-                "created_at": "2026-11-07T01:40:18+07:00",
-                "updated_at": "2026-11-07T01:40:18+07:00"
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "2c113d98-ac6c-4c54-aaf4-a0d4c8a96661",
+                "name": "Panti Asuhan Yatim Putra Muhammadiyah",
+                "variant": "orphanage",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "a865b29e-ea0c-4c6d-8912-6cb44829516c",
+                "name": "Panti Sosial Tresna Werdha",
+                "variant": "nursing_home",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "2290991f-0fdc-43a8-83ef-b342a639a685",
+                "name": "Pesantren Al-Muyamman",
+                "variant": "religious_community",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "cc7da44f-4222-42ad-95d7-71afb0b8f871",
+                "name": "Pondok Pesantren Jamhariyah",
+                "variant": "religious_community",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "595e7aca-fc07-4ea9-934f-517cf3ee632e",
+                "name": "RPA Wiloso Projo",
+                "variant": "orphanage",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "5b532983-7c4e-4f4a-91d3-524cb6aa463b",
+                "name": "Rumah Singgah Pasien Anak",
+                "variant": "shelter",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "07c8058d-6f1a-4004-9571-ca1e00af435e",
+                "name": "Rumah Yatim Piatu Aisyiyah",
+                "variant": "orphanage",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "6132310a-8d5d-406f-a477-32e17a790bad",
+                "name": "Rumah Yoel",
+                "variant": "shelter",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "4230c3ae-771d-4325-9708-db5c7300ed5d",
+                "name": "TPA Samirono",
+                "variant": "religious_community",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "4cd300ef-2abc-4c5c-a250-d0554cc0ab86",
+                "name": "Universitas Gadjah Mada",
+                "variant": "university",
+                "email_domain": "ugm.ac.id",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "f32a5056-da38-46ae-a1c4-408e3ea8003e",
+                "name": "Universitas Islam Indonesia",
+                "variant": "university",
+                "email_domain": "uii.ac.id",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "f8764944-45e5-45dc-b26d-c28a43d04f62",
+                "name": "Universitas Negeri Yogyakarta",
+                "variant": "university",
+                "email_domain": "uny.ac.id",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "68308640-99d9-48dd-8787-d1c26b3f5933",
+                "name": "Yayasan Al-afiyah",
+                "variant": "foundation",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "b30b1c1a-d640-4196-ae6b-0e8f3502c018",
+                "name": "Yayasan Al-Kahfi",
+                "variant": "foundation",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "d556a673-5624-4fc0-9e5d-af6e5e2b8d52",
+                "name": "Yayasan Atap Langit",
+                "variant": "foundation",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "06be2132-7117-4f7f-9fe7-fdad921e6f12",
+                "name": "Yayasan Bumi Damai",
+                "variant": "foundation",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "240b3969-a7b5-4663-9ff7-49ca5216fe97",
+                "name": "Yayasan Hamba",
+                "variant": "foundation",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "167ac215-4bbf-4174-90d2-9ccfb70693cf",
+                "name": "Yayasan La Tahzan",
+                "variant": "foundation",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "009082a3-b437-4745-80f6-c1ceb1e5a319",
+                "name": "Yayasan Madania",
+                "variant": "foundation",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
+              },
+              {
+                "id": "f9333f33-fec0-4d3f-b202-10f483ebc811",
+                "name": "Yayasan Sayap Ibu",
+                "variant": "orphanage",
+                "is_priority": false,
+                "hidden": false,
+                "created_at": "2026-11-11T08:55:22+07:00",
+                "updated_at": "2026-11-11T08:55:22+07:00"
               }
             ],
             "meta": {
               "page": 1,
-              "limit": 5,
-              "total": 23,
-              "total_pages": 5
+              "limit": 50,
+              "total": 26,
+              "total_pages": 1
             }
           }

@@ -15,7 +15,7 @@ http:
 runtime:
   variables:
     - name: inviteToken
-      value: b9e87ca6adb2e0d2c24b93752b7555b57caf50c79ced45ead12cabda4a08c7e0
+      value: 0cd7ef63fa363a415b4f5adda681309e02627e36fae0fc2e7388ce53732dce77
 
 settings:
   encodeUrl: true
@@ -55,13 +55,13 @@ examples:
         - name: x-frame-options
           value: DENY
         - name: x-request-id
-          value: ref_eb93c856
+          value: ref_438a5e46
         - name: x-xss-protection
           value: 1; mode=block
         - name: date
-          value: Sat, 31 Oct 2026 01:37:28 GMT
+          value: Wed, 11 Nov 2026 01:57:28 GMT
         - name: content-length
-          value: "274"
+          value: "303"
       body:
         type: json
         data: |-
@@ -73,9 +73,10 @@ examples:
               "email": "user@berbagibitesjogja.com",
               "role": "super",
               "division_id": 2,
+              "division_name": "Managerial",
               "name": "Budi Bakso",
               "phone_number": "6280000000000",
-              "expires_at": "2026-11-02T08:37:09+07:00",
+              "expires_at": "2026-11-13T08:56:04+07:00",
               "is_expired": false,
               "is_accepted": false
             }

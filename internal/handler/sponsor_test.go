@@ -18,9 +18,21 @@ import (
 
 func setStaffAuth(r *http.Request) *http.Request {
 	claims := &auth.Claims{
-		UserID: uuid.MustParse("00000000-0000-0000-0000-000000000001"),
-		Role:   "super",
-		Email:  "super@berbagibitesjogja.com",
+		UserID:  uuid.MustParse("00000000-0000-0000-0000-000000000001"),
+		Role:    "super",
+		IsStaff: true,
+		Email:   "super@berbagibitesjogja.com",
+	}
+	ctx := middleware.WithClaims(r.Context(), claims)
+	return r.WithContext(ctx)
+}
+
+func setHeroAuth(r *http.Request) *http.Request {
+	claims := &auth.Claims{
+		UserID:  uuid.MustParse("00000000-0000-0000-0000-000000000002"),
+		IsHero:  true,
+		IsStaff: false,
+		Email:   "hero@example.com",
 	}
 	ctx := middleware.WithClaims(r.Context(), claims)
 	return r.WithContext(ctx)

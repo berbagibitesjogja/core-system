@@ -8,7 +8,7 @@ http:
   url: "{{base_url}}/beneficiary-categories/:id"
   params:
     - name: id
-      value: 751bdc3f-9499-4525-8ec0-81a58a77a739
+      value: 4cd300ef-2abc-4c5c-a250-d0554cc0ab86
       type: path
   auth: inherit
 
@@ -25,7 +25,7 @@ examples:
       method: GET
       params:
         - name: id
-          value: 751bdc3f-9499-4525-8ec0-81a58a77a739
+          value: 4cd300ef-2abc-4c5c-a250-d0554cc0ab86
           type: path
     response:
       status: 200
@@ -50,13 +50,13 @@ examples:
         - name: x-frame-options
           value: DENY
         - name: x-request-id
-          value: ref_e35c3c0e
+          value: ref_9d66fd8e
         - name: x-xss-protection
           value: 1; mode=block
         - name: date
-          value: Fri, 06 Nov 2026 18:41:43 GMT
+          value: Wed, 11 Nov 2026 02:07:30 GMT
         - name: content-length
-          value: "262"
+          value: "330"
       body:
         type: json
         data: |-
@@ -64,11 +64,13 @@ examples:
             "status": "success",
             "message": "Beneficiary category retrieved successfully",
             "data": {
-              "id": "751bdc3f-9499-4525-8ec0-81a58a77a739",
-              "name": "BRSPA",
-              "variant": "shelter",
+              "id": "4cd300ef-2abc-4c5c-a250-d0554cc0ab86",
+              "name": "Universitas Gadjah Mada",
+              "variant": "university",
+              "email_domain": "ugm.ac.id",
+              "is_priority": false,
               "hidden": false,
-              "created_at": "2026-11-07T01:40:18+07:00",
-              "updated_at": "2026-11-07T01:40:18+07:00"
+              "created_at": "2026-11-11T08:55:22+07:00",
+              "updated_at": "2026-11-11T08:55:22+07:00"
             }
           }

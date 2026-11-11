@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -14,8 +16,10 @@ import (
 type Claims struct {
 	UserID     uuid.UUID `json:"user_id"`
 	Email      string    `json:"email"`
-	Role       string    `json:"role"`
-	DivisionID int32     `json:"division_id"`
+	IsStaff    bool      `json:"is_staff"`
+	Role       string    `json:"role,omitempty"`
+	DivisionID int32     `json:"division_id,omitempty"`
+	IsHero     bool      `json:"is_hero"`
 	jwt.RegisteredClaims
 }
 
@@ -28,12 +32,14 @@ func CheckPassword(password, hash string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
-func SignAccessToken(userID uuid.UUID, email string, role string, divisionID int32, secret string, duration time.Duration) (string, error) {
+func SignAccessToken(userID uuid.UUID, email string, isStaff bool, role string, divisionID int32, isHero bool, secret string, duration time.Duration) (string, error) {
 	claims := Claims{
 		UserID:     userID,
 		Email:      email,
+		IsStaff:    isStaff,
 		Role:       role,
 		DivisionID: divisionID,
+		IsHero:     isHero,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID.String(),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -45,7 +51,7 @@ func SignAccessToken(userID uuid.UUID, email string, role string, divisionID int
 	return token.SignedString([]byte(secret))
 }
 
-func GenerateRefreshToken() (string, error) {
+func generateRefreshToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
@@ -54,12 +60,21 @@ func GenerateRefreshToken() (string, error) {
 }
 
 func GenerateSecureToken() (raw string, hash string, err error) {
-	raw, err = GenerateRefreshToken()
+	raw, err = generateRefreshToken()
 	if err != nil {
 		return "", "", err
 	}
 	hash = HashToken(raw)
 	return raw, hash, nil
+}
+
+// GenerateVerificationCode generates a cryptographically secure 6-digit numeric verification code ("000000" to "999999").
+func GenerateVerificationCode() (string, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%06d", n.Int64()), nil
 }
 
 func HashToken(rawToken string) string {

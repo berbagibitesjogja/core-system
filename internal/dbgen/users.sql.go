@@ -13,55 +13,51 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const checkEmailExists = `-- name: CheckEmailExists :one
-SELECT EXISTS (
-    SELECT 1 FROM users WHERE email = $1 AND deleted_at IS NULL
-) AS exists
+const clearUserPassword = `-- name: ClearUserPassword :exec
+UPDATE users
+SET password_hash = NULL,
+    updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL
 `
 
-func (q *Queries) CheckEmailExists(ctx context.Context, email string) (bool, error) {
-	row := q.db.QueryRow(ctx, checkEmailExists, email)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
+func (q *Queries) ClearUserPassword(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, clearUserPassword, id)
+	return err
 }
 
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (
-    division_id,
     email,
-    password_hash,
-    role,
     name,
+    password_hash,
     phone_number,
+    pfp_external_url,
     is_active,
     email_verified_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8
+    $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING id, division_id, email, password_hash, role, name, phone_number, profile_pic, bio, address, is_active, email_verified_at, created_at, updated_at
+RETURNING id, email, name, password_hash, phone_number, profile_pic, pfp_external_url, bio, address, is_active, email_verified_at, created_at, updated_at
 `
 
 type CreateUserParams struct {
-	DivisionID      int32
 	Email           string
-	PasswordHash    pgtype.Text
-	Role            UserRole
 	Name            string
+	PasswordHash    pgtype.Text
 	PhoneNumber     pgtype.Text
+	PfpExternalUrl  pgtype.Text
 	IsActive        bool
 	EmailVerifiedAt pgtype.Timestamptz
 }
 
 type CreateUserRow struct {
 	ID              uuid.UUID
-	DivisionID      int32
 	Email           string
-	PasswordHash    pgtype.Text
-	Role            UserRole
 	Name            string
+	PasswordHash    pgtype.Text
 	PhoneNumber     pgtype.Text
 	ProfilePic      pgtype.UUID
+	PfpExternalUrl  pgtype.Text
 	Bio             pgtype.Text
 	Address         pgtype.Text
 	IsActive        bool
@@ -72,25 +68,23 @@ type CreateUserRow struct {
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
 	row := q.db.QueryRow(ctx, createUser,
-		arg.DivisionID,
 		arg.Email,
-		arg.PasswordHash,
-		arg.Role,
 		arg.Name,
+		arg.PasswordHash,
 		arg.PhoneNumber,
+		arg.PfpExternalUrl,
 		arg.IsActive,
 		arg.EmailVerifiedAt,
 	)
 	var i CreateUserRow
 	err := row.Scan(
 		&i.ID,
-		&i.DivisionID,
 		&i.Email,
-		&i.PasswordHash,
-		&i.Role,
 		&i.Name,
+		&i.PasswordHash,
 		&i.PhoneNumber,
 		&i.ProfilePic,
+		&i.PfpExternalUrl,
 		&i.Bio,
 		&i.Address,
 		&i.IsActive,
@@ -102,24 +96,23 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, division_id, email, password_hash, role, name, phone_number, profile_pic, bio, address, is_active, email_verified_at, created_at, updated_at, deleted_at
+SELECT id, email, name, password_hash, phone_number, profile_pic, pfp_external_url, bio, address, is_active, email_verified_at, created_at, updated_at, deleted_at
 FROM users
-WHERE email = $1 AND deleted_at IS NULL
+WHERE LOWER(email) = LOWER($1) AND deleted_at IS NULL
 LIMIT 1
 `
 
-func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
-	row := q.db.QueryRow(ctx, getUserByEmail, email)
+func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByEmail, lower)
 	var i User
 	err := row.Scan(
 		&i.ID,
-		&i.DivisionID,
 		&i.Email,
-		&i.PasswordHash,
-		&i.Role,
 		&i.Name,
+		&i.PasswordHash,
 		&i.PhoneNumber,
 		&i.ProfilePic,
+		&i.PfpExternalUrl,
 		&i.Bio,
 		&i.Address,
 		&i.IsActive,
@@ -131,32 +124,152 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 	return i, err
 }
 
-const getUserByID = `-- name: GetUserByID :one
-SELECT id, division_id, email, password_hash, role, name, phone_number, profile_pic, bio, address, is_active, email_verified_at, created_at, updated_at, deleted_at
-FROM users
-WHERE id = $1 AND deleted_at IS NULL
+const getUserWithRolesByEmail = `-- name: GetUserWithRolesByEmail :one
+SELECT 
+    u.id,
+    u.email,
+    u.name,
+    u.password_hash,
+    u.phone_number,
+    u.profile_pic,
+    u.pfp_external_url,
+    u.bio,
+    u.address,
+    u.is_active,
+    u.email_verified_at,
+    u.created_at,
+    u.updated_at,
+    s.role AS staff_role,
+    s.division_id AS staff_division_id,
+    d.name AS staff_division_name,
+    (s.user_id IS NOT NULL)::BOOLEAN AS is_staff,
+    (h.user_id IS NOT NULL)::BOOLEAN AS is_hero
+FROM users u
+LEFT JOIN staff s ON s.user_id = u.id
+LEFT JOIN divisions d ON d.id = s.division_id AND d.deleted_at IS NULL
+LEFT JOIN heroes h ON h.user_id = u.id
+WHERE LOWER(u.email) = LOWER($1) AND u.deleted_at IS NULL
 LIMIT 1
 `
 
-func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
-	row := q.db.QueryRow(ctx, getUserByID, id)
-	var i User
+type GetUserWithRolesByEmailRow struct {
+	ID                uuid.UUID
+	Email             string
+	Name              string
+	PasswordHash      pgtype.Text
+	PhoneNumber       pgtype.Text
+	ProfilePic        pgtype.UUID
+	PfpExternalUrl    pgtype.Text
+	Bio               pgtype.Text
+	Address           pgtype.Text
+	IsActive          bool
+	EmailVerifiedAt   pgtype.Timestamptz
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	StaffRole         NullUserRole
+	StaffDivisionID   pgtype.Int4
+	StaffDivisionName pgtype.Text
+	IsStaff           bool
+	IsHero            bool
+}
+
+func (q *Queries) GetUserWithRolesByEmail(ctx context.Context, lower string) (GetUserWithRolesByEmailRow, error) {
+	row := q.db.QueryRow(ctx, getUserWithRolesByEmail, lower)
+	var i GetUserWithRolesByEmailRow
 	err := row.Scan(
 		&i.ID,
-		&i.DivisionID,
 		&i.Email,
-		&i.PasswordHash,
-		&i.Role,
 		&i.Name,
+		&i.PasswordHash,
 		&i.PhoneNumber,
 		&i.ProfilePic,
+		&i.PfpExternalUrl,
 		&i.Bio,
 		&i.Address,
 		&i.IsActive,
 		&i.EmailVerifiedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
+		&i.StaffRole,
+		&i.StaffDivisionID,
+		&i.StaffDivisionName,
+		&i.IsStaff,
+		&i.IsHero,
+	)
+	return i, err
+}
+
+const getUserWithRolesByID = `-- name: GetUserWithRolesByID :one
+SELECT 
+    u.id,
+    u.email,
+    u.name,
+    u.password_hash,
+    u.phone_number,
+    u.profile_pic,
+    u.pfp_external_url,
+    u.bio,
+    u.address,
+    u.is_active,
+    u.email_verified_at,
+    u.created_at,
+    u.updated_at,
+    s.role AS staff_role,
+    s.division_id AS staff_division_id,
+    d.name AS staff_division_name,
+    (s.user_id IS NOT NULL)::BOOLEAN AS is_staff,
+    (h.user_id IS NOT NULL)::BOOLEAN AS is_hero
+FROM users u
+LEFT JOIN staff s ON s.user_id = u.id
+LEFT JOIN divisions d ON d.id = s.division_id AND d.deleted_at IS NULL
+LEFT JOIN heroes h ON h.user_id = u.id
+WHERE u.id = $1 AND u.deleted_at IS NULL
+LIMIT 1
+`
+
+type GetUserWithRolesByIDRow struct {
+	ID                uuid.UUID
+	Email             string
+	Name              string
+	PasswordHash      pgtype.Text
+	PhoneNumber       pgtype.Text
+	ProfilePic        pgtype.UUID
+	PfpExternalUrl    pgtype.Text
+	Bio               pgtype.Text
+	Address           pgtype.Text
+	IsActive          bool
+	EmailVerifiedAt   pgtype.Timestamptz
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	StaffRole         NullUserRole
+	StaffDivisionID   pgtype.Int4
+	StaffDivisionName pgtype.Text
+	IsStaff           bool
+	IsHero            bool
+}
+
+func (q *Queries) GetUserWithRolesByID(ctx context.Context, id uuid.UUID) (GetUserWithRolesByIDRow, error) {
+	row := q.db.QueryRow(ctx, getUserWithRolesByID, id)
+	var i GetUserWithRolesByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Name,
+		&i.PasswordHash,
+		&i.PhoneNumber,
+		&i.ProfilePic,
+		&i.PfpExternalUrl,
+		&i.Bio,
+		&i.Address,
+		&i.IsActive,
+		&i.EmailVerifiedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.StaffRole,
+		&i.StaffDivisionID,
+		&i.StaffDivisionName,
+		&i.IsStaff,
+		&i.IsHero,
 	)
 	return i, err
 }
@@ -171,29 +284,4 @@ WHERE id = $1 AND deleted_at IS NULL
 func (q *Queries) MarkEmailVerified(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, markEmailVerified, id)
 	return err
-}
-
-const updateUserPassword = `-- name: UpdateUserPassword :one
-UPDATE users
-SET password_hash = $2,
-    updated_at = NOW()
-WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, updated_at
-`
-
-type UpdateUserPasswordParams struct {
-	ID           uuid.UUID
-	PasswordHash pgtype.Text
-}
-
-type UpdateUserPasswordRow struct {
-	ID        uuid.UUID
-	UpdatedAt time.Time
-}
-
-func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (UpdateUserPasswordRow, error) {
-	row := q.db.QueryRow(ctx, updateUserPassword, arg.ID, arg.PasswordHash)
-	var i UpdateUserPasswordRow
-	err := row.Scan(&i.ID, &i.UpdatedAt)
-	return i, err
 }

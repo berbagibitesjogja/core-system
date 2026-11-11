@@ -1,7 +1,7 @@
 # API Contract: Beneficiary Categories Management
 
-> **Document Version:** `1.0.0`  
-> **Topic ID:** `006`  
+> **Document Version:** `1.1.0`  
+> **Topic Reference:** `006`, `010`, `011`  
 > **Base Path:** `/api/v1`  
 > **Security:** Bearer JWT (`Authorization: Bearer <token>`) & Optional Bearer token for public read endpoints  
 > **Rate Limiting:** Token Bucket (60 req/min per IP)  
@@ -69,15 +69,23 @@
 | `GET` | `/api/v1/beneficiary-categories` | Optional Bearer | Public / Staff | List beneficiary categories (paginated, filtered). Public callers receive non-hidden records only. |
 | `GET` | `/api/v1/beneficiary-categories/:id` | Optional Bearer | Public / Staff | Retrieve single category by UUID. Hidden records require authenticated staff. |
 | `POST` | `/api/v1/beneficiary-categories` | Bearer JWT | `super`, `core`, `staff` | Create a new beneficiary category. Enforces case-insensitive active uniqueness. |
-| `PATCH` | `/api/v1/beneficiary-categories/:id` | Bearer JWT | `super`, `core`, `staff` | Partial safe update of mutable category fields (`name`, `variant`, `hidden`). |
+| `PATCH` | `/api/v1/beneficiary-categories/:id` | Bearer JWT | `super`, `core`, `staff` | Partial safe update of mutable category fields (`name`, `address`, `maps`, `variant`, `email_domain`, `is_priority`, `hidden`). |
 | `DELETE` | `/api/v1/beneficiary-categories/:id` | Bearer JWT | `super`, `core`, `staff` | Soft-delete category (`deleted_at = NOW()`). Releases active unique name constraint. |
 
 ---
 
 ## 3. Taxonomy Variants & Indexing Design
 
-* **Allowed Taxonomy Variants:**
-  `student`, `orphanage`, `nursing_home`, `shelter`, `religious_community`, `foundation`, `society`, `other`.
+* **Allowed Taxonomy Variants (9 variants):**
+  * `university` &mdash; Higher education institution (eligible for automatic Hero domain-matching and hero assignments).
+  * `kipk` &mdash; Kartu Indonesia Pintar Kuliah priority category (eligible for hero assignments).
+  * `orphanage` &mdash; Panti asuhan / orphanages.
+  * `nursing_home` &mdash; Panti jompo / eldercare facilities.
+  * `shelter` &mdash; Emergency or temporary shelters.
+  * `religious_community` &mdash; Community religious centers / places of worship.
+  * `foundation` &mdash; Registered charitable foundations (yayasan).
+  * `society` &mdash; Community groups and neighborhood associations.
+  * `other` &mdash; General or uncategorized beneficiary entities.
 * **Primary Key:** UUID (`id UUID DEFAULT gen_random_uuid()`).
 * **GIN Trigram Index:** `idx_beneficiary_categories_name_trgm` on `name gin_trgm_ops` provides high-performance substring search (`ILIKE '%<query>%'`) without sequential table scans.
 * **Partial Active Uniqueness:** `uk_beneficiary_categories_active_lower_name` on `LOWER(name) WHERE deleted_at IS NULL` prevents duplicates among active records while allowing re-use after deletion.
@@ -115,17 +123,25 @@ Retrieves a paginated list of beneficiary categories sorted alphabetically by na
   "message": "Beneficiary categories retrieved successfully",
   "data": [
     {
-      "id": "e2e5057e-e17f-4cfa-a7b2-bd72e6be31d9",
-      "name": "Mahasiswa",
-      "variant": "student",
+      "id": "f83366d2-9a98-4003-94ae-eb09d79b065c",
+      "name": "Universitas Gadjah Mada",
+      "address": "Bulaksumur, Caturtunggal, Sleman, DI Yogyakarta",
+      "maps": "https://maps.app.goo.gl/ugm",
+      "variant": "university",
+      "email_domain": "mail.ugm.ac.id",
+      "is_priority": true,
       "hidden": false,
       "created_at": "2026-11-07T01:25:00+07:00",
       "updated_at": "2026-11-07T01:25:00+07:00"
     },
     {
       "id": "673f324d-6202-4fc8-9824-7f28bc9ef2d2",
-      "name": "Panti Asuhan Anak",
+      "name": "Panti Asuhan Anak Yatim",
+      "address": "Jl. Kaliurang KM 7, Sleman",
+      "maps": null,
       "variant": "orphanage",
+      "email_domain": null,
+      "is_priority": false,
       "hidden": false,
       "created_at": "2026-11-07T01:25:00+07:00",
       "updated_at": "2026-11-07T01:25:00+07:00"
@@ -145,7 +161,7 @@ Retrieves a paginated list of beneficiary categories sorted alphabetically by na
 {
   "status": "error",
   "code": "VAL_001",
-  "message": "Invalid variant filter. Allowed: student, orphanage, nursing_home, shelter, religious_community, foundation, society, other",
+  "message": "Invalid variant filter. Allowed: university, kipk, orphanage, nursing_home, shelter, religious_community, foundation, society, other",
   "ref_id": "ref_83fa7102"
 }
 ```
@@ -175,9 +191,13 @@ Retrieves an active beneficiary category by UUID. If the category is hidden, pub
   "status": "success",
   "message": "Beneficiary category retrieved successfully",
   "data": {
-    "id": "e2e5057e-e17f-4cfa-a7b2-bd72e6be31d9",
-    "name": "Mahasiswa",
-    "variant": "student",
+    "id": "f83366d2-9a98-4003-94ae-eb09d79b065c",
+    "name": "Universitas Gadjah Mada",
+    "address": "Bulaksumur, Caturtunggal, Sleman, DI Yogyakarta",
+    "maps": "https://maps.app.goo.gl/ugm",
+    "variant": "university",
+    "email_domain": "mail.ugm.ac.id",
+    "is_priority": true,
     "hidden": false,
     "created_at": "2026-11-07T01:25:00+07:00",
     "updated_at": "2026-11-07T01:25:00+07:00"
@@ -220,16 +240,24 @@ Creates a new beneficiary category in the catalog.
 
 ```json
 {
-  "name": "Panti Jompo Lansia Terlantar",
-  "variant": "nursing_home",
+  "name": "Universitas Islam Indonesia",
+  "address": "Jl. Kaliurang KM 14.5, Sleman",
+  "maps": "https://maps.google.com/?q=uii",
+  "variant": "university",
+  "email_domain": "uii.ac.id",
+  "is_priority": true,
   "hidden": false
 }
 ```
 
 | Field | Type | Required | Constraints | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `name` | string | Yes | Min 1, Max 150 chars | Name of the beneficiary category. |
-| `variant` | string | Yes | One of 8 allowed variants | Taxonomy classification. |
+| `name` | string | **Yes** | Min 1, Max 150 chars | Name of the beneficiary category. |
+| `address` | string | No | Max 255 chars | Physical address of the entity. |
+| `maps` | string | No | Max 255 chars | Google Maps URL or share link. |
+| `variant` | string | **Yes** | One of 9 allowed variants | Taxonomy classification. |
+| `email_domain` | string | No | Max 255 chars | Required only for domain-matched auto-enrollment; only valid when `variant = university`. Must contain a dot and be strictly lowercase. |
+| `is_priority` | boolean | No | Default `false` | Marks category as a priority target for distributions. |
 | `hidden` | boolean | No | Default `false` | When true, visible only to authenticated staff. |
 
 #### Responses
@@ -241,8 +269,12 @@ Creates a new beneficiary category in the catalog.
   "message": "Beneficiary category created successfully",
   "data": {
     "id": "8905da67-9366-4c94-8178-569382218412",
-    "name": "Panti Jompo Lansia Terlantar",
-    "variant": "nursing_home",
+    "name": "Universitas Islam Indonesia",
+    "address": "Jl. Kaliurang KM 14.5, Sleman",
+    "maps": "https://maps.google.com/?q=uii",
+    "variant": "university",
+    "email_domain": "uii.ac.id",
+    "is_priority": true,
     "hidden": false,
     "created_at": "2026-11-07T01:35:10+07:00",
     "updated_at": "2026-11-07T01:35:10+07:00"
@@ -259,12 +291,13 @@ Creates a new beneficiary category in the catalog.
   "ref_id": "ref_179b0c24",
   "errors": {
     "name": "Name is required",
-    "variant": "Invalid variant. Allowed: student, orphanage, nursing_home, shelter, religious_community, foundation, society, other"
+    "variant": "Invalid variant. Allowed: university, kipk, orphanage, nursing_home, shelter, religious_community, foundation, society, other",
+    "email_domain": "Email domain can only be set for university variant"
   }
 }
 ```
 
-##### `400 Bad Request` (Duplicate Active Name Conflict)
+##### `400 Bad Request` (Duplicate Active Name or Domain Conflict)
 ```json
 {
   "status": "error",
@@ -272,7 +305,8 @@ Creates a new beneficiary category in the catalog.
   "message": "Database constraint violation",
   "ref_id": "ref_599b418a",
   "errors": {
-    "name": "Beneficiary category already exists"
+    "name": "Beneficiary category already exists",
+    "email_domain": "Email domain is already registered"
   }
 }
 ```
@@ -298,7 +332,8 @@ Performs a safe partial update on an active beneficiary category. Unmentioned fi
 
 ```json
 {
-  "name": "Panti Jompo & Lansia Sejahtera",
+  "name": "Universitas Islam Indonesia Terpadu",
+  "is_priority": false,
   "hidden": true
 }
 ```
@@ -306,7 +341,11 @@ Performs a safe partial update on an active beneficiary category. Unmentioned fi
 | Field | Type | Required | Constraints | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `name` | string | No | Min 1, Max 150 chars | Updated category name. |
-| `variant` | string | No | One of 8 allowed variants | Updated taxonomy variant. |
+| `address` | string | No | Max 255 chars | Updated physical address. |
+| `maps` | string | No | Max 255 chars | Updated Google Maps link. |
+| `variant` | string | No | One of 9 allowed variants | Updated taxonomy variant. Protected by hero enrollment guard. |
+| `email_domain` | string | No | Max 255 chars | Updated email domain. Only allowed when variant is `university`. |
+| `is_priority` | boolean | No | Boolean | Updated priority flag. |
 | `hidden` | boolean | No | Boolean | Updated visibility flag. |
 
 #### Responses
@@ -318,11 +357,28 @@ Performs a safe partial update on an active beneficiary category. Unmentioned fi
   "message": "Beneficiary category updated successfully",
   "data": {
     "id": "8905da67-9366-4c94-8178-569382218412",
-    "name": "Panti Jompo & Lansia Sejahtera",
-    "variant": "nursing_home",
+    "name": "Universitas Islam Indonesia Terpadu",
+    "address": "Jl. Kaliurang KM 14.5, Sleman",
+    "maps": "https://maps.google.com/?q=uii",
+    "variant": "university",
+    "email_domain": "uii.ac.id",
+    "is_priority": false,
     "hidden": true,
     "created_at": "2026-11-07T01:35:10+07:00",
     "updated_at": "2026-11-07T01:36:25+07:00"
+  }
+}
+```
+
+##### `400 Bad Request` (Hero Enrollment Variant Guard)
+```json
+{
+  "status": "error",
+  "code": "VAL_001",
+  "message": "Validation failed",
+  "ref_id": "ref_14319dc7",
+  "errors": {
+    "variant": "Cannot change category variant away from hero-eligible while heroes are actively enrolled in it"
   }
 }
 ```
