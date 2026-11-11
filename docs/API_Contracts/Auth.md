@@ -1,7 +1,7 @@
-# API Contract: Auth & User Management (Invite-Only System)
+# API Contract: Auth & User Management
 
-> **Document Version:** `1.0.0`  
-> **Topic ID:** `002`  
+> **Document Version:** `1.1.0`  
+> **Topic Reference:** `002`, `010`, `011`  
 > **Base Path:** `/api/v1`  
 > **Security:** Bearer JWT (`Authorization: Bearer <token>`) & Token Bucket Rate Limiting (60 req/min per IP)  
 > **Specification Format:** REST / JSON  
@@ -50,8 +50,9 @@
 
 | Method | Endpoint | Auth | Role Guardrails | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/invitations` | Bearer JWT | `super`, `core` | Create new user invitation & dispatch invite email |
+| `POST` | `/api/v1/invitations` | Bearer JWT | `super`, `core` | Create new staff invitation & dispatch invite email |
 | `GET` | `/api/v1/invitations/validate` | Public | None | Validate raw invitation token & return pre-fill data |
+| `POST` | `/api/v1/invitations/accept` | Bearer JWT | Authenticated User | Accept invitation to elevate existing account to staff |
 | `POST` | `/api/v1/auth/register` | Public | None (Token) | Complete invite-only registration and receive initial JWTs |
 | `POST` | `/api/v1/auth/login` | Public | None | Authenticate active user via email & password |
 | `POST` | `/api/v1/auth/refresh` | Public | None | Rotate refresh token and obtain fresh access token |
@@ -86,7 +87,7 @@ Creates a cryptographic invitation record, records inviter identity, normalizes 
 
 | Field | Type | Required | Rules & Constraints |
 | :--- | :--- | :--- | :--- |
-| `email` | string | **Yes** | Valid email address format, max 255 chars. Must not belong to an existing active user. |
+| `email` | string | **Yes** | Valid email address format, max 255 chars. Must not belong to an active staff member. |
 | `role` | string | **Yes** | One of: `"super"`, `"core"`, `"staff"`. Subject to caller role guardrails. |
 | `division_id` | integer | **Yes** | Must match existing record in `divisions` table. |
 | `name` | string | No | Max 255 characters. |
@@ -104,6 +105,7 @@ Creates a cryptographic invitation record, records inviter identity, normalizes 
     "email": "sarah.core@berbagibitesjogja.com",
     "role": "core",
     "division_id": 2,
+    "division_name": "Operational",
     "name": "Sarah Jenkins",
     "phone_number": "6281234567890",
     "expires_at": "2026-11-02T08:12:54.757823+07:00",
@@ -113,15 +115,28 @@ Creates a cryptographic invitation record, records inviter identity, normalizes 
 }
 ```
 
-##### `400 Bad Request` (Existing User or Invalid Reference)
+##### `400 Bad Request` (Active Staff Conflict)
 ```json
 {
   "status": "error",
   "code": "VAL_002",
-  "message": "An active user with this email already exists",
+  "message": "An active staff user with this email already exists",
   "ref_id": "ref_fcf501b3",
   "errors": {
-    "email": "Email is already registered"
+    "email": "Email is already registered as staff"
+  }
+}
+```
+
+##### `400 Bad Request` (Pending Invitation Conflict)
+```json
+{
+  "status": "error",
+  "code": "VAL_003",
+  "message": "A pending invitation for this email already exists",
+  "ref_id": "ref_9011af28",
+  "errors": {
+    "email": "Invitation already pending"
   }
 }
 ```
@@ -131,7 +146,7 @@ Creates a cryptographic invitation record, records inviter identity, normalizes 
 {
   "status": "error",
   "code": "FORBIDDEN",
-  "message": "Forbidden: insufficient permissions to invite this role",
+  "message": "Core role can only invite Staff members",
   "ref_id": "ref_18da9b02"
 }
 ```
@@ -163,6 +178,7 @@ Validates the raw 64-character invitation token from the frontend register page 
     "email": "sarah.core@berbagibitesjogja.com",
     "role": "core",
     "division_id": 2,
+    "division_name": "Operational",
     "name": "Sarah Jenkins",
     "phone_number": "6281234567890",
     "expires_at": "2026-11-02T08:12:54+07:00",
@@ -177,8 +193,77 @@ Validates the raw 64-character invitation token from the frontend register page 
 {
   "status": "error",
   "code": "NOT_FOUND",
-  "message": "Invitation token not found or invalid",
+  "message": "Invitation not found or invalid",
   "ref_id": "ref_d91823ab"
+}
+```
+
+##### `410 Gone` (Expired or Already Accepted)
+```json
+{
+  "status": "error",
+  "code": "INVITATION_INVALID",
+  "message": "Invitation has already been accepted",
+  "ref_id": "ref_b3fd883c",
+  "errors": {
+    "is_expired": false,
+    "is_accepted": true
+  }
+}
+```
+
+---
+
+### 3.3 Accept Invitation (Elevation for Authenticated Users)
+
+Allows an existing authenticated user (e.g. an existing Hero) to accept an invitation issued to their email address. Elevates the user's role to staff, marks the invitation accepted, revokes pre-existing sessions, and issues an augmented JWT reflecting staff permissions.
+
+* **Method:** `POST`
+* **Path:** `/api/v1/invitations/accept`
+* **Authentication:** Required (`Bearer <JWT>`)
+
+#### Request Body
+```json
+{
+  "token": "5baca0df9e4d2fdffddc8aacfa942406dac5fa1ac6e547a915ece961d298bcb9"
+}
+```
+
+#### Responses
+
+##### `200 OK`
+```json
+{
+  "status": "success",
+  "message": "Invitation accepted successfully",
+  "data": {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refresh_token": "bf3f33e19749e42d00ed3cd54bb7ea555d38de710c7da978421721dccd270484",
+    "expires_in": 900,
+    "user": {
+      "id": "8573d7a5-5bf8-457a-8b63-106965aafe64",
+      "email": "sarah.core@berbagibitesjogja.com",
+      "name": "Sarah Jenkins",
+      "phone_number": "6281234567890",
+      "is_active": true,
+      "is_staff": true,
+      "role": "core",
+      "division_id": 2,
+      "division_name": "Operational",
+      "is_hero": true,
+      "email_verified_at": "2026-10-31T08:13:07+07:00"
+    }
+  }
+}
+```
+
+##### `403 Forbidden` (Email Mismatch)
+```json
+{
+  "status": "error",
+  "code": "FORBIDDEN",
+  "message": "This invitation was issued to a different email address",
+  "ref_id": "ref_e8912341"
 }
 ```
 
@@ -194,9 +279,9 @@ Validates the raw 64-character invitation token from the frontend register page 
 
 ---
 
-### 3.3 Register via Invitation
+### 3.4 Register via Invitation (New Account)
 
-Consumes a valid invitation token, verifies password security, creates the user account in an atomic transaction, marks `email_verified_at = NOW()`, updates the invitation record as accepted, and generates the initial JWT auth session.
+Consumes a valid invitation token, verifies password security, creates the user account in an atomic transaction, marks `email_verified_at = NOW()`, creates the `staff` subtype record, updates the invitation as accepted, and generates the initial JWT auth session.
 
 * **Method:** `POST`
 * **Path:** `/api/v1/auth/register`
@@ -215,7 +300,7 @@ Consumes a valid invitation token, verifies password security, creates the user 
 | Field | Type | Required | Rules & Constraints |
 | :--- | :--- | :--- | :--- |
 | `invitation_token` | string | **Yes** | 64-character raw invitation token. |
-| `password` | string | **Yes** | Minimum 8 characters. Hashed via bcrypt (cost 10). |
+| `password` | string | **Yes** | Minimum 8 characters, max 72 characters. Hashed via bcrypt (cost 10). |
 | `name` | string | **Yes** | Max 255 characters. Can be confirmed or edited by user. |
 | `phone_number` | string | **Yes** | Max 20 characters. Normalized to `628...` by database trigger. |
 
@@ -233,11 +318,14 @@ Consumes a valid invitation token, verifies password security, creates the user 
     "user": {
       "id": "8573d7a5-5bf8-457a-8b63-106965aafe64",
       "email": "sarah.core@berbagibitesjogja.com",
-      "role": "core",
-      "division_id": 2,
       "name": "Sarah Jenkins",
       "phone_number": "6281234567890",
       "is_active": true,
+      "is_staff": true,
+      "role": "core",
+      "division_id": 2,
+      "division_name": "Operational",
+      "is_hero": false,
       "email_verified_at": "2026-10-31T08:13:07+07:00"
     }
   }
@@ -269,9 +357,9 @@ Consumes a valid invitation token, verifies password security, creates the user 
 
 ---
 
-### 3.4 Login
+### 3.5 Login
 
-Authenticates active registered user credentials and issues an access token (15-minute lifespan) and refresh token (7-day lifespan).
+Authenticates active registered user credentials and issues an access token (15-minute lifespan) and refresh token (7-day lifespan). Enforces anti-enumeration defense: attempts with wrong passwords on deactivated accounts return `401 Unauthorized` identical to non-existent accounts.
 
 * **Method:** `POST`
 * **Path:** `/api/v1/auth/login`
@@ -299,17 +387,21 @@ Authenticates active registered user credentials and issues an access token (15-
     "user": {
       "id": "00000000-0000-0000-0000-000000000001",
       "email": "it@berbagibitesjogja.com",
-      "role": "super",
-      "division_id": 1,
       "name": "Tim IT",
       "phone_number": "620000000001",
-      "is_active": true
+      "is_active": true,
+      "is_staff": true,
+      "role": "super",
+      "division_id": 1,
+      "division_name": "IT",
+      "is_hero": false,
+      "email_verified_at": "2026-10-27T10:04:53+07:00"
     }
   }
 }
 ```
 
-##### `401 Unauthorized` (Bad Credentials or Inactive)
+##### `401 Unauthorized` (Bad Credentials or Non-Existent Account)
 ```json
 {
   "status": "error",
@@ -319,9 +411,19 @@ Authenticates active registered user credentials and issues an access token (15-
 }
 ```
 
+##### `403 Forbidden` (Correct Password on Deactivated Account)
+```json
+{
+  "status": "error",
+  "code": "FORBIDDEN",
+  "message": "Account has been deactivated. Please contact support.",
+  "ref_id": "ref_91a038bf"
+}
+```
+
 ---
 
-### 3.5 Refresh Token Rotation
+### 3.6 Refresh Token Rotation
 
 Exchanges an active refresh token for a newly rotated refresh token and a new access token. The old refresh token is revoked immediately.
 
@@ -363,7 +465,7 @@ Exchanges an active refresh token for a newly rotated refresh token and a new ac
 
 ---
 
-### 3.6 Logout
+### 3.7 Logout
 
 Revokes the supplied refresh token so it cannot be used again to issue access tokens.
 

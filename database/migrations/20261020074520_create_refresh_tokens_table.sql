@@ -8,7 +8,7 @@ CREATE TABLE refresh_tokens (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens (user_id);
+CREATE INDEX idx_refresh_tokens_user_created ON refresh_tokens (user_id, created_at DESC);
 
 -- +goose Down
 DROP TABLE IF EXISTS refresh_tokens CASCADE;

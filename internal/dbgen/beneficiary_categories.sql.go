@@ -7,6 +7,7 @@ package dbgen
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -37,27 +38,47 @@ func (q *Queries) CountBeneficiaryCategories(ctx context.Context, arg CountBenef
 const createBeneficiaryCategory = `-- name: CreateBeneficiaryCategory :one
 INSERT INTO beneficiary_categories (
     name,
+    address,
+    maps,
     variant,
+    email_domain,
+    is_priority,
     hidden
 ) VALUES (
-    $1, $2, $3
+    $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING id, name, variant, hidden, created_at, updated_at, deleted_at
+RETURNING id, name, address, maps, variant, email_domain, is_priority, hidden, created_at, updated_at, deleted_at
 `
 
 type CreateBeneficiaryCategoryParams struct {
-	Name    string
-	Variant string
-	Hidden  bool
+	Name        string
+	Address     pgtype.Text
+	Maps        pgtype.Text
+	Variant     string
+	EmailDomain pgtype.Text
+	IsPriority  bool
+	Hidden      bool
 }
 
 func (q *Queries) CreateBeneficiaryCategory(ctx context.Context, arg CreateBeneficiaryCategoryParams) (BeneficiaryCategory, error) {
-	row := q.db.QueryRow(ctx, createBeneficiaryCategory, arg.Name, arg.Variant, arg.Hidden)
+	row := q.db.QueryRow(ctx, createBeneficiaryCategory,
+		arg.Name,
+		arg.Address,
+		arg.Maps,
+		arg.Variant,
+		arg.EmailDomain,
+		arg.IsPriority,
+		arg.Hidden,
+	)
 	var i BeneficiaryCategory
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
+		&i.Address,
+		&i.Maps,
 		&i.Variant,
+		&i.EmailDomain,
+		&i.IsPriority,
 		&i.Hidden,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -67,7 +88,7 @@ func (q *Queries) CreateBeneficiaryCategory(ctx context.Context, arg CreateBenef
 }
 
 const getBeneficiaryCategoryByID = `-- name: GetBeneficiaryCategoryByID :one
-SELECT id, name, variant, hidden, created_at, updated_at, deleted_at
+SELECT id, name, address, maps, variant, email_domain, is_priority, hidden, created_at, updated_at, deleted_at
 FROM beneficiary_categories
 WHERE id = $1 AND deleted_at IS NULL
 LIMIT 1
@@ -79,7 +100,11 @@ func (q *Queries) GetBeneficiaryCategoryByID(ctx context.Context, id uuid.UUID) 
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
+		&i.Address,
+		&i.Maps,
 		&i.Variant,
+		&i.EmailDomain,
+		&i.IsPriority,
 		&i.Hidden,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -89,13 +114,13 @@ func (q *Queries) GetBeneficiaryCategoryByID(ctx context.Context, id uuid.UUID) 
 }
 
 const listBeneficiaryCategories = `-- name: ListBeneficiaryCategories :many
-SELECT id, name, variant, hidden, created_at, updated_at, deleted_at
+SELECT id, name, address, maps, variant, email_domain, is_priority, hidden, created_at, updated_at, deleted_at
 FROM beneficiary_categories
 WHERE deleted_at IS NULL
   AND ($3::boolean IS NULL OR hidden = $3)
   AND ($4::text IS NULL OR variant = $4)
   AND ($5::text IS NULL OR name ILIKE '%' || $5 || '%')
-ORDER BY name ASC
+ORDER BY is_priority DESC, name ASC
 LIMIT $1 OFFSET $2
 `
 
@@ -125,7 +150,11 @@ func (q *Queries) ListBeneficiaryCategories(ctx context.Context, arg ListBenefic
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
+			&i.Address,
+			&i.Maps,
 			&i.Variant,
+			&i.EmailDomain,
+			&i.IsPriority,
 			&i.Hidden,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -139,6 +168,51 @@ func (q *Queries) ListBeneficiaryCategories(ctx context.Context, arg ListBenefic
 		return nil, err
 	}
 	return items, nil
+}
+
+const matchUniversityCategoryByEmailDomain = `-- name: MatchUniversityCategoryByEmailDomain :one
+SELECT id, name, address, maps, variant, email_domain, is_priority, hidden, created_at, updated_at
+FROM beneficiary_categories
+WHERE variant = 'university'
+  AND email_domain IS NOT NULL
+  AND deleted_at IS NULL
+  AND (
+    LOWER($1) = email_domain
+    OR LOWER($1) LIKE '%.' || email_domain
+  )
+ORDER BY LENGTH(email_domain) DESC
+LIMIT 1
+`
+
+type MatchUniversityCategoryByEmailDomainRow struct {
+	ID          uuid.UUID
+	Name        string
+	Address     pgtype.Text
+	Maps        pgtype.Text
+	Variant     string
+	EmailDomain pgtype.Text
+	IsPriority  bool
+	Hidden      bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (q *Queries) MatchUniversityCategoryByEmailDomain(ctx context.Context, lower string) (MatchUniversityCategoryByEmailDomainRow, error) {
+	row := q.db.QueryRow(ctx, matchUniversityCategoryByEmailDomain, lower)
+	var i MatchUniversityCategoryByEmailDomainRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Address,
+		&i.Maps,
+		&i.Variant,
+		&i.EmailDomain,
+		&i.IsPriority,
+		&i.Hidden,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const softDeleteBeneficiaryCategory = `-- name: SoftDeleteBeneficiaryCategory :one
@@ -166,32 +240,48 @@ const updateBeneficiaryCategory = `-- name: UpdateBeneficiaryCategory :one
 UPDATE beneficiary_categories
 SET
     name = $2,
-    variant = $3,
-    hidden = $4,
+    address = $3,
+    maps = $4,
+    variant = $5,
+    email_domain = $6,
+    is_priority = $7,
+    hidden = $8,
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, name, variant, hidden, created_at, updated_at, deleted_at
+RETURNING id, name, address, maps, variant, email_domain, is_priority, hidden, created_at, updated_at, deleted_at
 `
 
 type UpdateBeneficiaryCategoryParams struct {
-	ID      uuid.UUID
-	Name    string
-	Variant string
-	Hidden  bool
+	ID          uuid.UUID
+	Name        string
+	Address     pgtype.Text
+	Maps        pgtype.Text
+	Variant     string
+	EmailDomain pgtype.Text
+	IsPriority  bool
+	Hidden      bool
 }
 
 func (q *Queries) UpdateBeneficiaryCategory(ctx context.Context, arg UpdateBeneficiaryCategoryParams) (BeneficiaryCategory, error) {
 	row := q.db.QueryRow(ctx, updateBeneficiaryCategory,
 		arg.ID,
 		arg.Name,
+		arg.Address,
+		arg.Maps,
 		arg.Variant,
+		arg.EmailDomain,
+		arg.IsPriority,
 		arg.Hidden,
 	)
 	var i BeneficiaryCategory
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
+		&i.Address,
+		&i.Maps,
 		&i.Variant,
+		&i.EmailDomain,
+		&i.IsPriority,
 		&i.Hidden,
 		&i.CreatedAt,
 		&i.UpdatedAt,

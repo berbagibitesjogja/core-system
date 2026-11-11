@@ -81,6 +81,18 @@ func TestHandleDBError(t *testing.T) {
 			wantErrorVal: "Beneficiary category already exists",
 		},
 		{
+			name: "duplicate beneficiary category active email domain (23505)",
+			err: &pgconn.PgError{
+				Code:           "23505",
+				ConstraintName: "uk_beneficiary_categories_active_email_domain",
+			},
+			wantHandled:  true,
+			wantStatus:   http.StatusBadRequest,
+			wantCode:     "VAL_002",
+			wantErrorKey: "email_domain",
+			wantErrorVal: "Email domain is already registered",
+		},
+		{
 			name: "duplicate reimbursement file pair (23505)",
 			err: &pgconn.PgError{
 				Code:           "23505",
@@ -139,6 +151,54 @@ func TestHandleDBError(t *testing.T) {
 			wantCode:     "VAL_002",
 			wantErrorKey: "payment_proof",
 			wantErrorVal: "Referenced payment proof file does not exist",
+		},
+		{
+			name: "foreign key violation on reimbursement paid_by (23503)",
+			err: &pgconn.PgError{
+				Code:           "23503",
+				ConstraintName: "reimbursements_paid_by_fkey",
+			},
+			wantHandled:  true,
+			wantStatus:   http.StatusBadRequest,
+			wantCode:     "VAL_002",
+			wantErrorKey: "paid_by",
+			wantErrorVal: "Referenced staff member does not exist",
+		},
+		{
+			name: "check constraint email domain university only (23514)",
+			err: &pgconn.PgError{
+				Code:           "23514",
+				ConstraintName: "chk_email_domain_university_only",
+			},
+			wantHandled:  true,
+			wantStatus:   http.StatusBadRequest,
+			wantCode:     "VAL_002",
+			wantErrorKey: "email_domain",
+			wantErrorVal: "Email domain can only be set for university variant",
+		},
+		{
+			name: "check constraint email domain lowercase (23514)",
+			err: &pgconn.PgError{
+				Code:           "23514",
+				ConstraintName: "chk_email_domain_lowercase",
+			},
+			wantHandled:  true,
+			wantStatus:   http.StatusBadRequest,
+			wantCode:     "VAL_002",
+			wantErrorKey: "email_domain",
+			wantErrorVal: "Email domain must be lowercase",
+		},
+		{
+			name: "check constraint variant (23514)",
+			err: &pgconn.PgError{
+				Code:           "23514",
+				ConstraintName: "beneficiary_categories_variant_check",
+			},
+			wantHandled:  true,
+			wantStatus:   http.StatusBadRequest,
+			wantCode:     "VAL_002",
+			wantErrorKey: "variant",
+			wantErrorVal: "Invalid variant",
 		},
 		{
 			name: "string truncation (22001)",

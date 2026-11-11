@@ -46,43 +46,12 @@ examples:
             "notes": "Beli ini itu",
             "file_ids": []
           }
-          // {
-          //   "amount": int
-          //   "method": max 50
-          //   "target": max 100
-          //   "notes"?: unlimited
-          //   "file_ids"?: uuid[]
-          // }
     response:
       status: 201
       statusText: Created
       headers:
-        - name: access-control-allow-headers
-          value: Content-Type, Authorization, X-Requested-With, Accept, Origin
-        - name: access-control-allow-methods
-          value: GET, POST, PUT, PATCH, DELETE, OPTIONS
-        - name: access-control-allow-origin
-          value: "*"
-        - name: access-control-expose-headers
-          value: Content-Length, Content-Type
-        - name: access-control-max-age
-          value: "86400"
         - name: content-type
           value: application/json; charset=utf-8
-        - name: referrer-policy
-          value: strict-origin-when-cross-origin
-        - name: x-content-type-options
-          value: nosniff
-        - name: x-frame-options
-          value: DENY
-        - name: x-request-id
-          value: ref_1fc27c0f
-        - name: x-xss-protection
-          value: 1; mode=block
-        - name: date
-          value: Fri, 06 Nov 2026 19:25:46 GMT
-        - name: content-length
-          value: "438"
       body:
         type: json
         data: |-

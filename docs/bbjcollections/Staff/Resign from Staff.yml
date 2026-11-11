@@ -1,0 +1,100 @@
+info:
+  name: Resign from Staff
+  type: http
+  seq: 6
+
+http:
+  method: DELETE
+  url: "{{base_url}}/staff/me"
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: after-response
+      code: |-
+        const body = res.getBody();
+
+        if (body && body.data) {
+          const token = body.data.access_token;
+          const refresh = body.data.refresh_token;
+
+          if (token) {
+            bru.setVar("accessToken", token);
+            try {
+              bru.setEnvVar("accessToken", token);
+            } catch (e) {}
+          }
+
+          if (refresh) {
+            bru.setVar("refreshToken", refresh);
+            try {
+              bru.setEnvVar("refreshToken", refresh);
+            } catch (e) {}
+          }
+
+          console.log("Resigned from staff successfully! Pure Hero tokens stored.");
+        }
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: "200"
+    request:
+      url: "{{base_url}}/staff/me"
+      method: DELETE
+    response:
+      status: 200
+      statusText: OK
+      headers:
+        - name: access-control-allow-headers
+          value: Content-Type, Authorization, X-Requested-With, Accept, Origin
+        - name: access-control-allow-methods
+          value: GET, POST, PUT, PATCH, DELETE, OPTIONS
+        - name: access-control-allow-origin
+          value: "*"
+        - name: access-control-expose-headers
+          value: Content-Length, Content-Type
+        - name: access-control-max-age
+          value: "86400"
+        - name: content-type
+          value: application/json; charset=utf-8
+        - name: referrer-policy
+          value: strict-origin-when-cross-origin
+        - name: x-content-type-options
+          value: nosniff
+        - name: x-frame-options
+          value: DENY
+        - name: x-request-id
+          value: ref_189c56e5
+        - name: x-xss-protection
+          value: 1; mode=block
+        - name: date
+          value: Wed, 11 Nov 2026 05:31:30 GMT
+        - name: content-length
+          value: "788"
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "Resigned from staff successfully. You are now a Hero.",
+            "data": {
+              "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIiwiZW1haWwiOiJpdEBiZXJiYWdpYml0ZXNqb2dqYS5jb20iLCJpc19zdGFmZiI6ZmFsc2UsImlzX2hlcm8iOnRydWUsInN1YiI6IjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAwMSIsImV4cCI6MTc5NDM3NTk5MCwiaWF0IjoxNzk0Mzc1MDkwfQ.Vv1NMoUrl52Yes4_dxgcKU6ORfgQ68WdzuBli7e8n9Y",
+              "refresh_token": "b9ad4cdadd34ef495faac4a35372381572fac99f85266b4b8bff48f9afcd937a",
+              "expires_in": 900,
+              "user": {
+                "id": "00000000-0000-0000-0000-000000000001",
+                "email": "it@berbagibitesjogja.com",
+                "name": "Tim IT",
+                "phone_number": "620000000001",
+                "is_active": true,
+                "is_staff": false,
+                "is_hero": true,
+                "email_verified_at": "2026-11-11T12:27:56+07:00"
+              }
+            }
+          }

@@ -8,32 +8,15 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestHashAndCheckPassword(t *testing.T) {
-	password := "my-secret-password-123"
-
-	hash, err := HashPassword(password)
-	if err != nil {
-		t.Fatalf("unexpected error hashing password: %v", err)
-	}
-
-	if !CheckPassword(password, hash) {
-		t.Fatal("expected CheckPassword to return true for matching password")
-	}
-
-	if CheckPassword("wrong-password", hash) {
-		t.Fatal("expected CheckPassword to return false for mismatched password")
-	}
-}
-
 func TestSignAndParseAccessToken(t *testing.T) {
-	secret := "test-secret-key-32-bytes-long!!"
-	userID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	email := "it@berbagibitesjogja.com"
-	role := "super"
-	var divisionID int32 = 1
+	secret := "test-secret-key-that-is-at-least-32-bytes-long"
+	userID := uuid.New()
+	email := "test@example.com"
+	role := "admin"
+	divisionID := int32(1)
 
-	t.Run("valid token round trip", func(t *testing.T) {
-		tokenStr, err := SignAccessToken(userID, email, role, divisionID, secret, 15*time.Minute)
+	t.Run("valid staff token round trip", func(t *testing.T) {
+		tokenStr, err := SignAccessToken(userID, email, true, role, divisionID, false, secret, 15*time.Minute)
 		if err != nil {
 			t.Fatalf("unexpected error signing token: %v", err)
 		}
@@ -44,10 +27,16 @@ func TestSignAndParseAccessToken(t *testing.T) {
 		}
 
 		if claims.UserID != userID {
-			t.Fatalf("expected UserID %v, got %v", userID, claims.UserID)
+			t.Fatalf("expected UserID %s, got %s", userID, claims.UserID)
 		}
 		if claims.Email != email {
 			t.Fatalf("expected Email %q, got %q", email, claims.Email)
+		}
+		if !claims.IsStaff {
+			t.Fatalf("expected IsStaff to be true")
+		}
+		if claims.IsHero {
+			t.Fatalf("expected IsHero to be false")
 		}
 		if claims.Role != role {
 			t.Fatalf("expected Role %q, got %q", role, claims.Role)
@@ -60,8 +49,33 @@ func TestSignAndParseAccessToken(t *testing.T) {
 		}
 	})
 
+	t.Run("valid hero token round trip", func(t *testing.T) {
+		tokenStr, err := SignAccessToken(userID, "hero@ugm.ac.id", false, "", 0, true, secret, 15*time.Minute)
+		if err != nil {
+			t.Fatalf("unexpected error signing token: %v", err)
+		}
+
+		claims, err := ParseToken(tokenStr, secret)
+		if err != nil {
+			t.Fatalf("unexpected error parsing token: %v", err)
+		}
+
+		if claims.IsStaff {
+			t.Fatalf("expected IsStaff to be false")
+		}
+		if !claims.IsHero {
+			t.Fatalf("expected IsHero to be true")
+		}
+		if claims.Role != "" {
+			t.Fatalf("expected empty Role, got %q", claims.Role)
+		}
+		if claims.DivisionID != 0 {
+			t.Fatalf("expected DivisionID 0, got %d", claims.DivisionID)
+		}
+	})
+
 	t.Run("fails with incorrect secret", func(t *testing.T) {
-		tokenStr, err := SignAccessToken(userID, email, role, divisionID, secret, 15*time.Minute)
+		tokenStr, err := SignAccessToken(userID, email, true, role, divisionID, false, secret, 15*time.Minute)
 		if err != nil {
 			t.Fatalf("unexpected error signing token: %v", err)
 		}
@@ -73,7 +87,7 @@ func TestSignAndParseAccessToken(t *testing.T) {
 	})
 
 	t.Run("expired token fails", func(t *testing.T) {
-		tokenStr, err := SignAccessToken(userID, email, role, divisionID, secret, -1*time.Minute)
+		tokenStr, err := SignAccessToken(userID, email, true, role, divisionID, false, secret, -1*time.Minute)
 		if err != nil {
 			t.Fatalf("unexpected error signing token: %v", err)
 		}
@@ -119,6 +133,23 @@ func TestGenerateSecureToken(t *testing.T) {
 			seen[raw] = struct{}{}
 		}
 	})
+}
+
+func TestGenerateVerificationCode(t *testing.T) {
+	for range 100 {
+		code, err := GenerateVerificationCode()
+		if err != nil {
+			t.Fatalf("unexpected error generating verification code: %v", err)
+		}
+		if len(code) != 6 {
+			t.Fatalf("expected 6-digit code, got %q (len %d)", code, len(code))
+		}
+		for _, ch := range code {
+			if ch < '0' || ch > '9' {
+				t.Fatalf("expected only digits in code, got %q", code)
+			}
+		}
+	}
 }
 
 func TestHashTokenDeterministic(t *testing.T) {

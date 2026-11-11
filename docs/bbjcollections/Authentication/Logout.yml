@@ -72,11 +72,11 @@ examples:
         - name: x-frame-options
           value: DENY
         - name: x-request-id
-          value: ref_3beb3dc1
+          value: ref_17232602
         - name: x-xss-protection
           value: 1; mode=block
         - name: date
-          value: Sat, 31 Oct 2026 01:38:03 GMT
+          value: Wed, 11 Nov 2026 01:58:09 GMT
         - name: content-length
           value: "57"
       body:

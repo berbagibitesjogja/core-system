@@ -44,22 +44,39 @@ type CreateInvitationRequest struct {
 }
 
 type InvitationResponse struct {
-	ID          string    `json:"id"`
-	Email       string    `json:"email"`
-	Role        string    `json:"role"`
-	DivisionID  int32     `json:"division_id"`
-	Name        *string   `json:"name,omitempty"`
-	PhoneNumber *string   `json:"phone_number,omitempty"`
-	ExpiresAt   time.Time `json:"expires_at"`
-	Token       string    `json:"token,omitempty"`
-	InviteLink  string    `json:"invite_link,omitempty"`
+	ID           string    `json:"id"`
+	Email        string    `json:"email"`
+	Role         string    `json:"role"`
+	DivisionID   int32     `json:"division_id"`
+	DivisionName string    `json:"division_name,omitempty"`
+	Name         *string   `json:"name,omitempty"`
+	PhoneNumber  *string   `json:"phone_number,omitempty"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	Token        string    `json:"token,omitempty"`
+	InviteLink   string    `json:"invite_link,omitempty"`
+}
+
+type ValidateInvitationResponse struct {
+	Valid        bool    `json:"valid"`
+	Email        string  `json:"email"`
+	Role         string  `json:"role"`
+	DivisionID   int32   `json:"division_id"`
+	DivisionName string  `json:"division_name,omitempty"`
+	Name         *string `json:"name,omitempty"`
+	PhoneNumber  *string `json:"phone_number,omitempty"`
+	ExpiresAt    string  `json:"expires_at"`
+	IsExpired    bool    `json:"is_expired"`
+	IsAccepted   bool    `json:"is_accepted"`
+}
+
+type AcceptInvitationRequest struct {
+	Token string `json:"token"`
 }
 
 func (h *InvitationHandler) CreateInvitationHandler(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok || claims == nil {
-		response.SetError(r.Context(), errors.New("unauthorized: missing claims in context"))
-		response.Unauthorized(w, r, "Unauthorized")
+		response.Unauthorized(w, r, "Authentication required")
 		return
 	}
 
@@ -77,12 +94,20 @@ func (h *InvitationHandler) CreateInvitationHandler(w http.ResponseWriter, r *ht
 	fieldErrors := make(map[string]string)
 	if req.Email == "" {
 		fieldErrors["email"] = "Email is required"
-	} else if !strings.Contains(req.Email, "@") {
+	} else if !auth.IsValidEmail(req.Email) {
 		fieldErrors["email"] = "Invalid email format"
 	}
 
+	var division dbgen.GetDivisionByIDRow
 	if req.DivisionID <= 0 {
 		fieldErrors["division_id"] = "Valid division_id is required"
+	} else {
+		d, err := h.queries.GetDivisionByID(r.Context(), req.DivisionID)
+		if err != nil {
+			fieldErrors["division_id"] = "Division not found"
+		} else {
+			division = d
+		}
 	}
 
 	if len(req.Name) > 255 {
@@ -124,25 +149,25 @@ func (h *InvitationHandler) CreateInvitationHandler(w http.ResponseWriter, r *ht
 		return
 	}
 
-	emailExists, err := h.queries.CheckEmailExists(r.Context(), req.Email)
-	if err != nil {
+	existingUser, err := h.queries.GetUserWithRolesByEmail(r.Context(), req.Email)
+	if err == nil {
+		if existingUser.IsStaff {
+			response.BadRequest(w, r, "VAL_002", "An active staff user with this email already exists", map[string]string{
+				"email": "Email is already registered as staff",
+			})
+			return
+		}
+	} else if !errors.Is(err, pgx.ErrNoRows) {
 		response.InternalServerError(w, r, err, "Failed to verify email availability")
 		return
 	}
-	if emailExists {
-		response.SetError(r.Context(), fmt.Errorf("active user already exists with email %s", req.Email))
-		response.BadRequest(w, r, "VAL_002", "An active user with this email already exists", map[string]string{
-			"email": "Email is already registered",
-		})
-		return
-	}
 
-	pendingExists, err := h.queries.CheckPendingInvitationByEmail(r.Context(), req.Email)
+	hasPending, err := h.queries.CheckPendingInvitationByEmail(r.Context(), req.Email)
 	if err != nil {
 		response.InternalServerError(w, r, err, "Failed to check existing invitations")
 		return
 	}
-	if pendingExists {
+	if hasPending {
 		response.SetError(r.Context(), fmt.Errorf("pending invitation already exists for email %s", req.Email))
 		response.BadRequest(w, r, "VAL_003", "A pending invitation for this email already exists", map[string]string{
 			"email": "Invitation already pending",
@@ -186,20 +211,19 @@ func (h *InvitationHandler) CreateInvitationHandler(w http.ResponseWriter, r *ht
 		return
 	}
 
-	baseURL := "http://localhost:8080"
-	if h.cfg != nil && h.cfg.AppConfig.FrontendURL != "" {
-		baseURL = h.cfg.AppConfig.FrontendURL
+	baseURL := ""
+	if h.cfg != nil {
+		baseURL = strings.TrimRight(h.cfg.AppConfig.FrontendURL, "/")
 	}
-	baseURL = strings.TrimRight(baseURL, "/")
 	inviteLink := fmt.Sprintf("%s/register?token=%s", baseURL, rawToken)
 
+	divisionName := division.Name
 	if h.mailer != nil {
 		recipientName := req.Name
 		if recipientName == "" {
 			recipientName = req.Email
 		}
 		inviterName := claims.Email
-		divisionName := fmt.Sprintf("Division %d", req.DivisionID)
 		go func() {
 			_ = h.mailer.SendInvitationEmail(req.Email, recipientName, inviterName, string(targetRole), divisionName, inviteLink, 48)
 		}()
@@ -215,28 +239,17 @@ func (h *InvitationHandler) CreateInvitationHandler(w http.ResponseWriter, r *ht
 	}
 
 	response.Success(w, http.StatusCreated, "Invitation created successfully", InvitationResponse{
-		ID:          invitation.ID.String(),
-		Email:       invitation.Email,
-		Role:        string(invitation.Role),
-		DivisionID:  invitation.DivisionID,
-		Name:        respName,
-		PhoneNumber: respPhone,
-		ExpiresAt:   invitation.ExpiresAt,
-		Token:       rawToken,
-		InviteLink:  inviteLink,
+		ID:           invitation.ID.String(),
+		Email:        invitation.Email,
+		Role:         string(invitation.Role),
+		DivisionID:   invitation.DivisionID,
+		DivisionName: divisionName,
+		Name:         respName,
+		PhoneNumber:  respPhone,
+		ExpiresAt:    invitation.ExpiresAt,
+		Token:        rawToken,
+		InviteLink:   inviteLink,
 	})
-}
-
-type ValidateInvitationResponse struct {
-	Valid       bool    `json:"valid"`
-	Email       string  `json:"email"`
-	Role        string  `json:"role"`
-	DivisionID  int32   `json:"division_id"`
-	Name        *string `json:"name,omitempty"`
-	PhoneNumber *string `json:"phone_number,omitempty"`
-	ExpiresAt   string  `json:"expires_at"`
-	IsExpired   bool    `json:"is_expired"`
-	IsAccepted  bool    `json:"is_accepted"`
 }
 
 func (h *InvitationHandler) ValidateInvitationHandler(w http.ResponseWriter, r *http.Request) {
@@ -286,14 +299,151 @@ func (h *InvitationHandler) ValidateInvitationHandler(w http.ResponseWriter, r *
 	}
 
 	response.Success(w, http.StatusOK, "Invitation is valid", ValidateInvitationResponse{
-		Valid:       true,
-		Email:       invitation.Email,
-		Role:        string(invitation.Role),
-		DivisionID:  invitation.DivisionID,
-		Name:        respName,
-		PhoneNumber: respPhone,
-		ExpiresAt:   invitation.ExpiresAt.Format(time.RFC3339),
-		IsExpired:   false,
-		IsAccepted:  false,
+		Valid:        true,
+		Email:        invitation.Email,
+		Role:         string(invitation.Role),
+		DivisionID:   invitation.DivisionID,
+		DivisionName: invitation.DivisionName,
+		Name:         respName,
+		PhoneNumber:  respPhone,
+		ExpiresAt:    invitation.ExpiresAt.Format(time.RFC3339),
+		IsExpired:    false,
+		IsAccepted:   false,
+	})
+}
+
+func (h *InvitationHandler) AcceptInvitationHandler(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok || claims == nil {
+		response.Unauthorized(w, r, "Authentication required")
+		return
+	}
+
+	var req AcceptInvitationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.BadRequest(w, r, "VAL_001", "Invalid request body", nil)
+		return
+	}
+
+	req.Token = strings.TrimSpace(req.Token)
+	if req.Token == "" {
+		response.BadRequest(w, r, "VAL_001", "Validation failed", map[string]string{
+			"token": "Token is required",
+		})
+		return
+	}
+
+	tokenHash := auth.HashToken(req.Token)
+	invitation, err := h.queries.GetInvitationByTokenHash(r.Context(), tokenHash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			response.SetError(r.Context(), errors.New("invitation token not found or invalid"))
+			response.Forbidden(w, r, "Invalid invitation token")
+			return
+		}
+		response.InternalServerError(w, r, err, "Failed to verify invitation")
+		return
+	}
+
+	if invitation.AcceptedAt.Valid {
+		response.SetError(r.Context(), fmt.Errorf("invitation %s already accepted at %s", invitation.ID, invitation.AcceptedAt.Time))
+		response.ErrorWithRequest(w, r, http.StatusGone, "INVITATION_ALREADY_USED", "This invitation has already been accepted", nil)
+		return
+	}
+
+	if time.Now().After(invitation.ExpiresAt) {
+		response.SetError(r.Context(), fmt.Errorf("invitation %s expired at %s", invitation.ID, invitation.ExpiresAt))
+		response.ErrorWithRequest(w, r, http.StatusGone, "INVITATION_EXPIRED", "This invitation has expired", nil)
+		return
+	}
+
+	if strings.ToLower(strings.TrimSpace(invitation.Email)) != strings.ToLower(strings.TrimSpace(claims.Email)) {
+		response.SetError(r.Context(), fmt.Errorf("email mismatch: invitation email %s != caller email %s", invitation.Email, claims.Email))
+		response.Forbidden(w, r, "This invitation was issued to a different email address")
+		return
+	}
+
+	tx, err := h.pool.Begin(r.Context())
+	if err != nil {
+		response.InternalServerError(w, r, err, "Failed to start database transaction")
+		return
+	}
+	defer func() {
+		_ = tx.Rollback(r.Context())
+	}()
+
+	qtx := h.queries.WithTx(tx)
+
+	_, staffErr := qtx.GetStaffByUserID(r.Context(), claims.UserID)
+	if staffErr == nil {
+		_, err = qtx.UpdateStaffRoleAndDivision(r.Context(), dbgen.UpdateStaffRoleAndDivisionParams{
+			UserID:     claims.UserID,
+			Role:       invitation.Role,
+			DivisionID: invitation.DivisionID,
+		})
+	} else {
+		_, err = qtx.CreateStaff(r.Context(), dbgen.CreateStaffParams{
+			UserID:     claims.UserID,
+			DivisionID: invitation.DivisionID,
+			Role:       invitation.Role,
+		})
+	}
+	if err != nil {
+		response.InternalServerError(w, r, err, "Failed to assign staff record")
+		return
+	}
+
+	_, err = qtx.MarkInvitationAccepted(r.Context(), invitation.ID)
+	if err != nil {
+		response.InternalServerError(w, r, err, "Failed to mark invitation accepted")
+		return
+	}
+
+	if err := qtx.RevokeAllUserRefreshTokens(r.Context(), claims.UserID); err != nil {
+		response.InternalServerError(w, r, err, "Failed to revoke existing sessions")
+		return
+	}
+
+	user, err := qtx.GetUserWithRolesByID(r.Context(), claims.UserID)
+	if err != nil {
+		response.InternalServerError(w, r, err, "Failed to reload user account")
+		return
+	}
+
+	session, err := IssueUserSession(r.Context(), qtx, h.cfg, UserSessionParams{
+		UserID:     user.ID,
+		Email:      user.Email,
+		IsStaff:    true,
+		Role:       string(invitation.Role),
+		DivisionID: invitation.DivisionID,
+		IsHero:     user.IsHero,
+	})
+	if err != nil {
+		response.InternalServerError(w, r, err, "Failed to issue updated authentication session")
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		response.InternalServerError(w, r, err, "Failed to commit invitation acceptance")
+		return
+	}
+
+	response.Success(w, http.StatusOK, "Invitation accepted successfully", AuthTokenResponse{
+		AccessToken:  session.AccessToken,
+		RefreshToken: session.RefreshToken,
+		ExpiresIn:    int64(session.AccessExpiry.Seconds()),
+		User: ToUserResponse(
+			user.ID,
+			user.Email,
+			user.Name,
+			user.PhoneNumber,
+			user.IsActive,
+			true,
+			string(invitation.Role),
+			invitation.DivisionID,
+			invitation.DivisionName,
+			user.IsHero,
+			user.EmailVerifiedAt,
+		),
 	})
 }

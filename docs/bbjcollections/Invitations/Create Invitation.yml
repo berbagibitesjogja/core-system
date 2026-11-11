@@ -76,13 +76,13 @@ examples:
         - name: x-frame-options
           value: DENY
         - name: x-request-id
-          value: ref_654708af
+          value: ref_fbb49fbd
         - name: x-xss-protection
           value: 1; mode=block
         - name: date
-          value: Sat, 31 Oct 2026 01:37:09 GMT
+          value: Wed, 11 Nov 2026 01:56:04 GMT
         - name: content-length
-          value: "478"
+          value: "507"
       body:
         type: json
         data: |-
@@ -90,14 +90,15 @@ examples:
             "status": "success",
             "message": "Invitation created successfully",
             "data": {
-              "id": "d0316a9b-9855-44a2-b968-8a80e75cfe9a",
+              "id": "d7c7fe96-a1ae-447b-b8f9-207a70553ddf",
               "email": "user@berbagibitesjogja.com",
               "role": "super",
               "division_id": 2,
+              "division_name": "Managerial",
               "name": "Budi Bakso",
               "phone_number": "6280000000000",
-              "expires_at": "2026-11-02T08:37:09.122094+07:00",
-              "token": "b9e87ca6adb2e0d2c24b93752b7555b57caf50c79ced45ead12cabda4a08c7e0",
-              "invite_link": "http://localhost:8080/register?token=b9e87ca6adb2e0d2c24b93752b7555b57caf50c79ced45ead12cabda4a08c7e0"
+              "expires_at": "2026-11-13T08:56:04.142816+07:00",
+              "token": "2e164976af37b926eeea29ecb9b3aac653d0199ea1048f7434d75fcda47aff8f",
+              "invite_link": "http://localhost:8080/register?token=2e164976af37b926eeea29ecb9b3aac653d0199ea1048f7434d75fcda47aff8f"
             }
           }

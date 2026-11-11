@@ -141,14 +141,60 @@ func (ns NullUserRole) Value() (driver.Value, error) {
 	return string(ns.UserRole), nil
 }
 
+type VerificationPurpose string
+
+const (
+	VerificationPurposeEmailVerification VerificationPurpose = "email_verification"
+	VerificationPurposePasswordReset     VerificationPurpose = "password_reset"
+)
+
+func (e *VerificationPurpose) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = VerificationPurpose(s)
+	case string:
+		*e = VerificationPurpose(s)
+	default:
+		return fmt.Errorf("unsupported scan type for VerificationPurpose: %T", src)
+	}
+	return nil
+}
+
+type NullVerificationPurpose struct {
+	VerificationPurpose VerificationPurpose
+	Valid               bool // Valid is true if VerificationPurpose is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullVerificationPurpose) Scan(value interface{}) error {
+	if value == nil {
+		ns.VerificationPurpose, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.VerificationPurpose.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullVerificationPurpose) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.VerificationPurpose), nil
+}
+
 type BeneficiaryCategory struct {
-	ID        uuid.UUID
-	Name      string
-	Variant   string
-	Hidden    bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	DeletedAt pgtype.Timestamptz
+	ID          uuid.UUID
+	Name        string
+	Address     pgtype.Text
+	Maps        pgtype.Text
+	Variant     string
+	EmailDomain pgtype.Text
+	IsPriority  bool
+	Hidden      bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	DeletedAt   pgtype.Timestamptz
 }
 
 type Division struct {
@@ -179,8 +225,22 @@ type FoodItem struct {
 	UpdatedAt time.Time
 }
 
+type Hero struct {
+	UserID     uuid.UUID
+	RemindMeAt pgtype.Timestamptz
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+type HeroCategory struct {
+	HeroID                uuid.UUID
+	BeneficiaryCategoryID uuid.UUID
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+}
+
 type OauthAccount struct {
-	ID             int64
+	ID             uuid.UUID
 	UserID         uuid.UUID
 	Provider       string
 	ProviderUserID string
@@ -235,15 +295,23 @@ type Sponsor struct {
 	DeletedAt pgtype.Timestamptz
 }
 
+type Staff struct {
+	UserID     uuid.UUID
+	DivisionID int32
+	Role       UserRole
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	DeletedAt  pgtype.Timestamptz
+}
+
 type User struct {
 	ID              uuid.UUID
-	DivisionID      int32
 	Email           string
-	PasswordHash    pgtype.Text
-	Role            UserRole
 	Name            string
+	PasswordHash    pgtype.Text
 	PhoneNumber     pgtype.Text
 	ProfilePic      pgtype.UUID
+	PfpExternalUrl  pgtype.Text
 	Bio             pgtype.Text
 	Address         pgtype.Text
 	IsActive        bool
@@ -265,4 +333,15 @@ type UserInvitation struct {
 	ExpiresAt   time.Time
 	AcceptedAt  pgtype.Timestamptz
 	CreatedAt   time.Time
+}
+
+type VerificationCode struct {
+	ID        uuid.UUID
+	UserID    uuid.UUID
+	Purpose   VerificationPurpose
+	CodeHash  string
+	Attempts  int16
+	ExpiresAt time.Time
+	UsedAt    pgtype.Timestamptz
+	CreatedAt time.Time
 }

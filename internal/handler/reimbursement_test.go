@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/berbagibitesjogja/core-system/internal/config"
+	"github.com/berbagibitesjogja/core-system/internal/middleware"
 	"github.com/berbagibitesjogja/core-system/internal/response"
 	"github.com/google/uuid"
 )
@@ -193,9 +194,10 @@ func TestReimbursementCRUD(t *testing.T) {
 		}
 	})
 
-	t.Run("Update Reimbursement (Happy Path)", func(t *testing.T) {
+	t.Run("Update Reimbursement (Happy Path with valid paid_by staff member)", func(t *testing.T) {
 		updatedTarget := testTarget + "99"
-		body := []byte(fmt.Sprintf(`{"amount":75000,"target":"%s","status":"completed"}`, updatedTarget))
+		staffUserID := "00000000-0000-0000-0000-000000000001"
+		body := []byte(fmt.Sprintf(`{"amount":75000,"target":"%s","status":"completed","paid_by":"%s"}`, updatedTarget, staffUserID))
 
 		req := setStaffAuth(httptest.NewRequest(http.MethodPatch, "/api/v1/reimbursements/"+createdID, bytes.NewReader(body)))
 		req.SetPathValue("id", createdID)
@@ -216,6 +218,35 @@ func TestReimbursementCRUD(t *testing.T) {
 		if rResp.Amount != 75000 || rResp.Target != updatedTarget || rResp.Status != "completed" {
 			t.Errorf("expected updated fields, got %+v", rResp)
 		}
+		if rResp.PaidBy == nil || *rResp.PaidBy != staffUserID {
+			t.Errorf("expected paid_by %s, got %v", staffUserID, rResp.PaidBy)
+		}
+	})
+
+	t.Run("Update Reimbursement with Non-Existent Staff paid_by Foreign Key Trap (400 VAL_002)", func(t *testing.T) {
+		nonExistentStaff := uuid.NewString()
+		body := []byte(fmt.Sprintf(`{"paid_by":"%s"}`, nonExistentStaff))
+
+		req := setStaffAuth(httptest.NewRequest(http.MethodPatch, "/api/v1/reimbursements/"+createdID, bytes.NewReader(body)))
+		req.SetPathValue("id", createdID)
+		rec := httptest.NewRecorder()
+
+		h.UpdateReimbursementHandler(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 Bad Request, got %d. Body: %s", rec.Code, rec.Body.String())
+		}
+
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp.Code != "VAL_002" {
+			t.Errorf("expected code VAL_002, got %s", resp.Code)
+		}
+
+		errMap, ok := resp.Errors.(map[string]any)
+		if !ok || errMap["paid_by"] != "Referenced staff member does not exist" {
+			t.Errorf("expected error 'Referenced staff member does not exist', got %+v", resp.Errors)
+		}
 	})
 
 	t.Run("Delete Reimbursement (Soft Delete)", func(t *testing.T) {
@@ -226,7 +257,7 @@ func TestReimbursementCRUD(t *testing.T) {
 		h.DeleteReimbursementHandler(rec, req)
 
 		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200 OK, got %d. Body: %s", rec.Code, rec.Body.String())
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
 		}
 
 		// Subsequent Get must return 404
@@ -257,6 +288,18 @@ func TestReimbursementListAndFilters(t *testing.T) {
 
 	cfg := config.LoadConfig()
 	h := NewReimbursementHandler(pool, &cfg)
+
+	t.Run("RequireStaff blocks Hero caller from Reimbursements (403 FORBIDDEN)", func(t *testing.T) {
+		guarded := middleware.RequireStaff(http.HandlerFunc(h.ListReimbursementsHandler))
+		heroReq := setHeroAuth(httptest.NewRequest(http.MethodGet, "/api/v1/reimbursements", nil))
+		rec := httptest.NewRecorder()
+
+		guarded.ServeHTTP(rec, heroReq)
+
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 Forbidden for hero calling reimbursement, got %d", rec.Code)
+		}
+	})
 
 	t.Run("List Reimbursements with Pagination", func(t *testing.T) {
 		req := setStaffAuth(httptest.NewRequest(http.MethodGet, "/api/v1/reimbursements?page=1&limit=10", nil))

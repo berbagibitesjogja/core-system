@@ -12,11 +12,19 @@ http:
       {
         "name": "Panti Asuhan Kasih Ibu Kepada Beta",
         "variant": "orphanage",
+        "address": "Jl. Kaliurang KM 5, Sleman",
+        "maps": "https://maps.google.com/?q=-7.76,110.37",
+        "email_domain": null,
+        "is_priority": false,
         "hidden": false
       }
       // {
       //   "name": max 150
-      //   "variant": student, orphanage, nursing_home, shelter, religious_community, foundation, society, other
+      //   "variant": university, kipk, orphanage, nursing_home, shelter, religious_community, foundation, society, other
+      //   "address"?: unlimited
+      //   "maps"?: unlimited
+      //   "email_domain"?: max 255
+      //   "is_priority"?: boolean
       //   "hidden"?: boolean
       // }
   auth: inherit
@@ -38,11 +46,19 @@ examples:
           {
             "name": "Panti Asuhan Kasih Ibu Kepada Beta",
             "variant": "orphanage",
+            "address": "Jl. Kaliurang KM 5, Sleman",
+            "maps": "https://maps.google.com/?q=-7.76,110.37",
+            "email_domain": null,
+            "is_priority": false,
             "hidden": false
           }
           // {
           //   "name": max 150
-          //   "variant": student, orphanage, nursing_home, shelter, religious_community, foundation, society, other
+          //   "variant": university, kipk, orphanage, nursing_home, shelter, religious_community, foundation, society, other
+          //   "address"?: unlimited
+          //   "maps"?: unlimited
+          //   "email_domain"?: max 255
+          //   "is_priority"?: boolean
           //   "hidden"?: boolean
           // }
     response:
@@ -68,13 +84,13 @@ examples:
         - name: x-frame-options
           value: DENY
         - name: x-request-id
-          value: ref_45bcc69b
+          value: ref_2f1e972e
         - name: x-xss-protection
           value: 1; mode=block
         - name: date
-          value: Fri, 06 Nov 2026 18:42:12 GMT
+          value: Wed, 11 Nov 2026 02:08:08 GMT
         - name: content-length
-          value: "291"
+          value: "399"
       body:
         type: json
         data: |-
@@ -82,11 +98,14 @@ examples:
             "status": "success",
             "message": "Beneficiary category created successfully",
             "data": {
-              "id": "f3262c29-5880-467d-a3a6-da00c38fa7c3",
+              "id": "9059f752-77ca-436f-8b0d-70b7b85442ce",
               "name": "Panti Asuhan Kasih Ibu Kepada Beta",
+              "address": "Jl. Kaliurang KM 5, Sleman",
+              "maps": "https://maps.google.com/?q=-7.76,110.37",
               "variant": "orphanage",
+              "is_priority": false,
               "hidden": false,
-              "created_at": "2026-11-07T01:42:12+07:00",
-              "updated_at": "2026-11-07T01:42:12+07:00"
+              "created_at": "2026-11-11T09:08:08+07:00",
+              "updated_at": "2026-11-11T09:08:08+07:00"
             }
           }

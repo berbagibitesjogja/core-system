@@ -91,13 +91,13 @@ examples:
         - name: x-frame-options
           value: DENY
         - name: x-request-id
-          value: ref_6bac88dd
+          value: ref_d580a93c
         - name: x-xss-protection
           value: 1; mode=block
         - name: date
-          value: Sat, 31 Oct 2026 01:36:35 GMT
+          value: Wed, 11 Nov 2026 01:55:40 GMT
         - name: content-length
-          value: "700"
+          value: "844"
       body:
         type: json
         data: |-
@@ -105,17 +105,21 @@ examples:
             "status": "success",
             "message": "Login successful",
             "data": {
-              "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIiwiZW1haWwiOiJpdEBiZXJiYWdpYml0ZXNqb2dqYS5jb20iLCJyb2xlIjoic3VwZXIiLCJkaXZpc2lvbl9pZCI6MSwic3ViIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIiwiZXhwIjoxNzkzNDExNDk1LCJpYXQiOjE3OTM0MTA1OTV9.UcWy63LNf49b2Ez8NBRoeUG8XsV7awULl4_ZB3lHvU4",
-              "refresh_token": "89e658edd826c87f145ca5ff3df2aefe93922976516c68e623d5337597040390",
+              "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIiwiZW1haWwiOiJpdEBiZXJiYWdpYml0ZXNqb2dqYS5jb20iLCJpc19zdGFmZiI6dHJ1ZSwicm9sZSI6InN1cGVyIiwiZGl2aXNpb25faWQiOjEsImlzX2hlcm8iOmZhbHNlLCJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJleHAiOjE3OTQzNjMwNDAsImlhdCI6MTc5NDM2MjE0MH0.OSxxkr5pZ9xjG3Y5WtQagFxJxniOVPk9lPymUN-iEaE",
+              "refresh_token": "14af45ed8ca98c358101ee5208075ad97ddbb65d162e629dd3ce4ca4d1db278b",
               "expires_in": 900,
               "user": {
                 "id": "00000000-0000-0000-0000-000000000001",
                 "email": "it@berbagibitesjogja.com",
-                "role": "super",
-                "division_id": 1,
                 "name": "Tim IT",
                 "phone_number": "620000000001",
-                "is_active": true
+                "is_active": true,
+                "is_staff": true,
+                "role": "super",
+                "division_id": 1,
+                "division_name": "IT",
+                "is_hero": false,
+                "email_verified_at": "2026-11-11T08:55:22+07:00"
               }
             }
           }

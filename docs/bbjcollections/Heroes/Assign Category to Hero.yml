@@ -1,0 +1,89 @@
+info:
+  name: Assign Category to Hero
+  type: http
+  seq: 7
+
+http:
+  method: POST
+  url: "{{base_url}}/heroes/:id/categories"
+  params:
+    - name: id
+      value: 00000000-0000-0000-0000-000000000001
+      type: path
+  body:
+    type: json
+    data: |-
+      {
+        "category_id": "4cd300ef-2abc-4c5c-a250-d0554cc0ab86"
+      }
+      // {
+      //   "category_id": uuid
+      // }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: "201"
+    request:
+      url: "{{base_url}}/heroes/:id/categories"
+      method: POST
+      params:
+        - name: id
+          value: 00000000-0000-0000-0000-000000000001
+          type: path
+      body:
+        type: json
+        data: |-
+          {
+            "category_id": "4cd300ef-2abc-4c5c-a250-d0554cc0ab86"
+          }
+          // {
+          //   "category_id": uuid
+          // }
+    response:
+      status: 201
+      statusText: Created
+      headers:
+        - name: access-control-allow-headers
+          value: Content-Type, Authorization, X-Requested-With, Accept, Origin
+        - name: access-control-allow-methods
+          value: GET, POST, PUT, PATCH, DELETE, OPTIONS
+        - name: access-control-allow-origin
+          value: "*"
+        - name: access-control-expose-headers
+          value: Content-Length, Content-Type
+        - name: access-control-max-age
+          value: "86400"
+        - name: content-type
+          value: application/json; charset=utf-8
+        - name: referrer-policy
+          value: strict-origin-when-cross-origin
+        - name: x-content-type-options
+          value: nosniff
+        - name: x-frame-options
+          value: DENY
+        - name: x-request-id
+          value: ref_d078b4f0
+        - name: x-xss-protection
+          value: 1; mode=block
+        - name: date
+          value: Wed, 11 Nov 2026 02:13:08 GMT
+        - name: content-length
+          value: "244"
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "Category assigned to hero successfully",
+            "data": {
+              "beneficiary_category_id": "4cd300ef-2abc-4c5c-a250-d0554cc0ab86",
+              "enrolled_at": "2026-11-11T09:13:08.012804+07:00",
+              "hero_id": "00000000-0000-0000-0000-000000000001"
+            }
+          }
