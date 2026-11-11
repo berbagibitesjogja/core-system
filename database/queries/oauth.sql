@@ -6,14 +6,20 @@ SELECT
     oa.provider_user_id,
     oa.email,
     oa.created_at,
-    u.division_id,
-    u.role,
     u.name,
     u.phone_number,
     u.is_active,
-    u.email_verified_at
+    u.email_verified_at,
+    s.role AS staff_role,
+    s.division_id AS staff_division_id,
+    d.name AS staff_division_name,
+    (s.user_id IS NOT NULL)::BOOLEAN AS is_staff,
+    (h.user_id IS NOT NULL)::BOOLEAN AS is_hero
 FROM oauth_accounts oa
 JOIN users u ON u.id = oa.user_id
+LEFT JOIN staff s ON s.user_id = u.id
+LEFT JOIN divisions d ON d.id = s.division_id AND d.deleted_at IS NULL
+LEFT JOIN heroes h ON h.user_id = u.id
 WHERE oa.provider = $1 AND oa.provider_user_id = $2 AND u.deleted_at IS NULL
 LIMIT 1;
 
@@ -27,13 +33,3 @@ INSERT INTO oauth_accounts (
     $1, $2, $3, $4
 )
 RETURNING id, user_id, provider, provider_user_id, email, created_at;
-
--- name: GetOAuthAccountsByUserID :many
-SELECT id, user_id, provider, provider_user_id, email, created_at
-FROM oauth_accounts
-WHERE user_id = $1
-ORDER BY created_at ASC;
-
--- name: DeleteOAuthAccount :exec
-DELETE FROM oauth_accounts
-WHERE user_id = $1 AND provider = $2;

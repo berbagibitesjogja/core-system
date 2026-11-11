@@ -29,6 +29,8 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	m := mailer.New(routerCfg.Config.SMTP)
 	queries := dbgen.New(routerCfg.Pool)
 	authHandler := handler.NewAuthHandler(routerCfg.Pool, routerCfg.Config)
+	heroAuthHandler := handler.NewHeroAuthHandler(routerCfg.Pool, routerCfg.Config, m)
+	heroHandler := handler.NewHeroHandler(routerCfg.Pool, routerCfg.Config)
 	invitationHandler := handler.NewInvitationHandler(routerCfg.Pool, routerCfg.Config, m)
 	oauthHandler := handler.NewOAuthHandler(routerCfg.Pool, routerCfg.Config, queries)
 	sponsorHandler := handler.NewSponsorHandler(routerCfg.Pool, routerCfg.Config)
@@ -38,11 +40,22 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 
 	authMiddleware := middleware.Authenticate(routerCfg.Config.AppConfig.JWTSecret)
 	optionalAuth := middleware.OptionalAuthenticate(routerCfg.Config.AppConfig.JWTSecret)
+	staffOnly := func(h http.Handler) http.Handler {
+		return authMiddleware(middleware.RequireStaff(h))
+	}
+	heroOnly := func(h http.Handler) http.Handler {
+		return authMiddleware(middleware.RequireHero(h))
+	}
 
 	// Public Auth Endpoints
 	mux.HandleFunc("POST /api/v1/auth/register", authHandler.RegisterHandler)
 	mux.HandleFunc("POST /api/v1/auth/login", authHandler.LoginHandler)
 	mux.HandleFunc("POST /api/v1/auth/refresh", authHandler.RefreshTokenHandler)
+
+	// Public Hero Auth Endpoints
+	mux.HandleFunc("POST /api/v1/heroes/register", heroAuthHandler.RegisterHandler)
+	mux.HandleFunc("POST /api/v1/heroes/verify-email", heroAuthHandler.VerifyEmailHandler)
+	mux.HandleFunc("POST /api/v1/heroes/resend-verification", heroAuthHandler.ResendVerificationHandler)
 
 	// Google OAuth Endpoints
 	mux.HandleFunc("GET /api/v1/auth/google/login", oauthHandler.GoogleLoginHandler)
@@ -53,35 +66,43 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 
 	// Invitation Endpoints
 	mux.HandleFunc("GET /api/v1/invitations/validate", invitationHandler.ValidateInvitationHandler)
-	mux.Handle("POST /api/v1/invitations", authMiddleware(http.HandlerFunc(invitationHandler.CreateInvitationHandler)))
+	mux.Handle("POST /api/v1/invitations", staffOnly(http.HandlerFunc(invitationHandler.CreateInvitationHandler)))
+	mux.Handle("POST /api/v1/invitations/accept", authMiddleware(http.HandlerFunc(invitationHandler.AcceptInvitationHandler)))
+
+	// Hero Endpoints
+	mux.Handle("POST /api/v1/heroes/me", authMiddleware(http.HandlerFunc(heroHandler.BecomeHeroHandler)))
+	mux.Handle("GET /api/v1/heroes/me", heroOnly(http.HandlerFunc(heroHandler.GetMyHeroProfileHandler)))
+	mux.Handle("GET /api/v1/heroes/{id}/categories", staffOnly(http.HandlerFunc(heroHandler.ListHeroCategoriesHandler)))
+	mux.Handle("POST /api/v1/heroes/{id}/categories", staffOnly(http.HandlerFunc(heroHandler.AddHeroCategoryHandler)))
+	mux.Handle("DELETE /api/v1/heroes/{id}/categories/{category_id}", staffOnly(http.HandlerFunc(heroHandler.RemoveHeroCategoryHandler)))
 
 	// Sponsor Endpoints
 	mux.Handle("GET /api/v1/sponsors", optionalAuth(http.HandlerFunc(sponsorHandler.ListSponsorsHandler)))
 	mux.Handle("GET /api/v1/sponsors/{id}", optionalAuth(http.HandlerFunc(sponsorHandler.GetSponsorByIDHandler)))
-	mux.Handle("POST /api/v1/sponsors", authMiddleware(http.HandlerFunc(sponsorHandler.CreateSponsorHandler)))
-	mux.Handle("PATCH /api/v1/sponsors/{id}", authMiddleware(http.HandlerFunc(sponsorHandler.UpdateSponsorHandler)))
-	mux.Handle("DELETE /api/v1/sponsors/{id}", authMiddleware(http.HandlerFunc(sponsorHandler.DeleteSponsorHandler)))
+	mux.Handle("POST /api/v1/sponsors", staffOnly(http.HandlerFunc(sponsorHandler.CreateSponsorHandler)))
+	mux.Handle("PATCH /api/v1/sponsors/{id}", staffOnly(http.HandlerFunc(sponsorHandler.UpdateSponsorHandler)))
+	mux.Handle("DELETE /api/v1/sponsors/{id}", staffOnly(http.HandlerFunc(sponsorHandler.DeleteSponsorHandler)))
 
 	// Food Item Endpoints
 	mux.HandleFunc("GET /api/v1/food-items", foodItemHandler.ListFoodItemsHandler)
 	mux.HandleFunc("GET /api/v1/food-items/{id}", foodItemHandler.GetFoodItemByIDHandler)
-	mux.Handle("POST /api/v1/food-items", authMiddleware(http.HandlerFunc(foodItemHandler.CreateFoodItemHandler)))
-	mux.Handle("PATCH /api/v1/food-items/{id}", authMiddleware(http.HandlerFunc(foodItemHandler.UpdateFoodItemHandler)))
-	mux.Handle("DELETE /api/v1/food-items/{id}", authMiddleware(http.HandlerFunc(foodItemHandler.DeleteFoodItemHandler)))
+	mux.Handle("POST /api/v1/food-items", staffOnly(http.HandlerFunc(foodItemHandler.CreateFoodItemHandler)))
+	mux.Handle("PATCH /api/v1/food-items/{id}", staffOnly(http.HandlerFunc(foodItemHandler.UpdateFoodItemHandler)))
+	mux.Handle("DELETE /api/v1/food-items/{id}", staffOnly(http.HandlerFunc(foodItemHandler.DeleteFoodItemHandler)))
 
 	// Beneficiary Category Endpoints
 	mux.Handle("GET /api/v1/beneficiary-categories", optionalAuth(http.HandlerFunc(beneficiaryCategoryHandler.ListBeneficiaryCategoriesHandler)))
 	mux.Handle("GET /api/v1/beneficiary-categories/{id}", optionalAuth(http.HandlerFunc(beneficiaryCategoryHandler.GetBeneficiaryCategoryByIDHandler)))
-	mux.Handle("POST /api/v1/beneficiary-categories", authMiddleware(http.HandlerFunc(beneficiaryCategoryHandler.CreateBeneficiaryCategoryHandler)))
-	mux.Handle("PATCH /api/v1/beneficiary-categories/{id}", authMiddleware(http.HandlerFunc(beneficiaryCategoryHandler.UpdateBeneficiaryCategoryHandler)))
-	mux.Handle("DELETE /api/v1/beneficiary-categories/{id}", authMiddleware(http.HandlerFunc(beneficiaryCategoryHandler.DeleteBeneficiaryCategoryHandler)))
+	mux.Handle("POST /api/v1/beneficiary-categories", staffOnly(http.HandlerFunc(beneficiaryCategoryHandler.CreateBeneficiaryCategoryHandler)))
+	mux.Handle("PATCH /api/v1/beneficiary-categories/{id}", staffOnly(http.HandlerFunc(beneficiaryCategoryHandler.UpdateBeneficiaryCategoryHandler)))
+	mux.Handle("DELETE /api/v1/beneficiary-categories/{id}", staffOnly(http.HandlerFunc(beneficiaryCategoryHandler.DeleteBeneficiaryCategoryHandler)))
 
 	// Reimbursement Endpoints
-	mux.Handle("POST /api/v1/reimbursements", authMiddleware(http.HandlerFunc(reimbursementHandler.CreateReimbursementHandler)))
-	mux.Handle("GET /api/v1/reimbursements", authMiddleware(http.HandlerFunc(reimbursementHandler.ListReimbursementsHandler)))
-	mux.Handle("GET /api/v1/reimbursements/{id}", authMiddleware(http.HandlerFunc(reimbursementHandler.GetReimbursementByIDHandler)))
-	mux.Handle("PATCH /api/v1/reimbursements/{id}", authMiddleware(http.HandlerFunc(reimbursementHandler.UpdateReimbursementHandler)))
-	mux.Handle("DELETE /api/v1/reimbursements/{id}", authMiddleware(http.HandlerFunc(reimbursementHandler.DeleteReimbursementHandler)))
+	mux.Handle("POST /api/v1/reimbursements", staffOnly(http.HandlerFunc(reimbursementHandler.CreateReimbursementHandler)))
+	mux.Handle("GET /api/v1/reimbursements", staffOnly(http.HandlerFunc(reimbursementHandler.ListReimbursementsHandler)))
+	mux.Handle("GET /api/v1/reimbursements/{id}", staffOnly(http.HandlerFunc(reimbursementHandler.GetReimbursementByIDHandler)))
+	mux.Handle("PATCH /api/v1/reimbursements/{id}", staffOnly(http.HandlerFunc(reimbursementHandler.UpdateReimbursementHandler)))
+	mux.Handle("DELETE /api/v1/reimbursements/{id}", staffOnly(http.HandlerFunc(reimbursementHandler.DeleteReimbursementHandler)))
 
 	rateLimit := routerCfg.Config.AppConfig.RateLimit
 	corsMiddleware := middleware.CORSWithConfig(routerCfg.Config.AppConfig.CORSOrigins, routerCfg.Config.AppConfig.CORSMaxAge)
@@ -109,6 +130,6 @@ func HealthCheckHandler(pool *pgxpool.Pool) http.HandlerFunc {
 func APIv1Handler(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]string{
 		"message": "Berbagi Bites Jogja API v1",
-		"version": "0.5.0",
+		"version": "0.6.0",
 	})
 }

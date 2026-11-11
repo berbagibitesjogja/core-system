@@ -36,7 +36,7 @@ func Authenticate(jwtSecret string) func(next http.Handler) http.Handler {
 			claims, err := auth.ParseToken(parts[1], jwtSecret)
 			if err != nil {
 				response.SetError(r.Context(), err)
-				response.Unauthorized(w, r, "Invalid token: "+err.Error())
+				response.Unauthorized(w, r, "Invalid or expired authentication token")
 				return
 			}
 
@@ -65,7 +65,7 @@ func OptionalAuthenticate(jwtSecret string) func(next http.Handler) http.Handler
 			claims, err := auth.ParseToken(parts[1], jwtSecret)
 			if err != nil {
 				response.SetError(r.Context(), err)
-				response.Unauthorized(w, r, "Invalid token: "+err.Error())
+				response.Unauthorized(w, r, "Invalid or expired authentication token")
 				return
 			}
 
@@ -73,6 +73,44 @@ func OptionalAuthenticate(jwtSecret string) func(next http.Handler) http.Handler
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+func RequireStaff(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := GetClaims(r.Context())
+		if !ok || claims == nil {
+			response.SetError(r.Context(), errors.New("authentication required"))
+			response.Unauthorized(w, r, "Authentication required")
+			return
+		}
+
+		if !claims.IsStaff {
+			response.SetError(r.Context(), errors.New("insufficient permissions: staff access required"))
+			response.Forbidden(w, r, "Staff access required")
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func RequireHero(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := GetClaims(r.Context())
+		if !ok || claims == nil {
+			response.SetError(r.Context(), errors.New("authentication required"))
+			response.Unauthorized(w, r, "Authentication required")
+			return
+		}
+
+		if !claims.IsHero {
+			response.SetError(r.Context(), errors.New("insufficient permissions: hero access required"))
+			response.Forbidden(w, r, "Hero access required")
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 func GetClaims(ctx context.Context) (*auth.Claims, bool) {

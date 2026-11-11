@@ -87,13 +87,13 @@ examples:
         - name: x-frame-options
           value: DENY
         - name: x-request-id
-          value: ref_97d67731
+          value: ref_4b5f1868
         - name: x-xss-protection
           value: 1; mode=block
         - name: date
-          value: Sat, 31 Oct 2026 01:37:56 GMT
+          value: Wed, 11 Nov 2026 01:57:56 GMT
         - name: content-length
-          value: "533"
+          value: "576"
       body:
         type: json
         data: |-
@@ -101,8 +101,8 @@ examples:
             "status": "success",
             "message": "Token refreshed successfully",
             "data": {
-              "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiOTNmMzIwZGItY2Y2YS00YzRkLWE2OTctYTk4OTU3YmQ3MGYwIiwiZW1haWwiOiJ1c2VyQGJlcmJhZ2liaXRlc2pvZ2phLmNvbSIsInJvbGUiOiJzdXBlciIsImRpdmlzaW9uX2lkIjoyLCJzdWIiOiI5M2YzMjBkYi1jZjZhLTRjNGQtYTY5Ny1hOTg5NTdiZDcwZjAiLCJleHAiOjE3OTM0MTE1NzYsImlhdCI6MTc5MzQxMDY3Nn0.OL2XyzEaxWgaaMwdBL7GPvUeic3u7BbbOS_5CKXJyK0",
-              "refresh_token": "b2e1c90df2d1ca9ed0707bf76da6dad47c3f3b68f9416dc02a8e98cb83b64089",
+              "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNDUyYWFjZGEtMjkyNC00M2IzLTlmNzAtNDU3MTQ5ZmQ1MmQyIiwiZW1haWwiOiJ1c2VyQGJlcmJhZ2liaXRlc2pvZ2phLmNvbSIsImlzX3N0YWZmIjp0cnVlLCJyb2xlIjoic3VwZXIiLCJkaXZpc2lvbl9pZCI6MiwiaXNfaGVybyI6ZmFsc2UsInN1YiI6IjQ1MmFhY2RhLTI5MjQtNDNiMy05ZjcwLTQ1NzE0OWZkNTJkMiIsImV4cCI6MTc5NDM2MzE3NiwiaWF0IjoxNzk0MzYyMjc2fQ.JIDXKGw4mKuV0gyLLGRyo-ajXH0V-AjZ-EB3s-DnPAw",
+              "refresh_token": "275947ed9e287f052c606f2bfe6c2d714985c0adda304018302ee25e5646529c",
               "expires_in": 900
             }
           }

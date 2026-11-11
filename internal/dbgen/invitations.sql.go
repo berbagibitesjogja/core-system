@@ -16,12 +16,12 @@ import (
 const checkPendingInvitationByEmail = `-- name: CheckPendingInvitationByEmail :one
 SELECT EXISTS (
     SELECT 1 FROM user_invitations
-    WHERE email = $1 AND accepted_at IS NULL AND expires_at > NOW()
+    WHERE LOWER(email) = LOWER($1) AND accepted_at IS NULL AND expires_at > NOW()
 ) AS exists
 `
 
-func (q *Queries) CheckPendingInvitationByEmail(ctx context.Context, email string) (bool, error) {
-	row := q.db.QueryRow(ctx, checkPendingInvitationByEmail, email)
+func (q *Queries) CheckPendingInvitationByEmail(ctx context.Context, lower string) (bool, error) {
+	row := q.db.QueryRow(ctx, checkPendingInvitationByEmail, lower)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -83,16 +83,34 @@ func (q *Queries) CreateInvitation(ctx context.Context, arg CreateInvitationPara
 }
 
 const getActiveInvitationByEmail = `-- name: GetActiveInvitationByEmail :one
-SELECT id, invited_by, email, role, division_id, name, phone_number, token_hash, expires_at, accepted_at, created_at
-FROM user_invitations
-WHERE email = $1 AND accepted_at IS NULL AND expires_at > NOW()
-ORDER BY created_at DESC
+SELECT 
+    i.id, i.invited_by, i.email, i.role, i.division_id, i.name, i.phone_number, i.token_hash, i.expires_at, i.accepted_at, i.created_at,
+    d.name AS division_name
+FROM user_invitations i
+JOIN divisions d ON d.id = i.division_id
+WHERE LOWER(i.email) = LOWER($1) AND i.accepted_at IS NULL AND i.expires_at > NOW()
+ORDER BY i.created_at DESC
 LIMIT 1
 `
 
-func (q *Queries) GetActiveInvitationByEmail(ctx context.Context, email string) (UserInvitation, error) {
-	row := q.db.QueryRow(ctx, getActiveInvitationByEmail, email)
-	var i UserInvitation
+type GetActiveInvitationByEmailRow struct {
+	ID           uuid.UUID
+	InvitedBy    uuid.UUID
+	Email        string
+	Role         UserRole
+	DivisionID   int32
+	Name         pgtype.Text
+	PhoneNumber  pgtype.Text
+	TokenHash    string
+	ExpiresAt    time.Time
+	AcceptedAt   pgtype.Timestamptz
+	CreatedAt    time.Time
+	DivisionName string
+}
+
+func (q *Queries) GetActiveInvitationByEmail(ctx context.Context, lower string) (GetActiveInvitationByEmailRow, error) {
+	row := q.db.QueryRow(ctx, getActiveInvitationByEmail, lower)
+	var i GetActiveInvitationByEmailRow
 	err := row.Scan(
 		&i.ID,
 		&i.InvitedBy,
@@ -105,20 +123,39 @@ func (q *Queries) GetActiveInvitationByEmail(ctx context.Context, email string) 
 		&i.ExpiresAt,
 		&i.AcceptedAt,
 		&i.CreatedAt,
+		&i.DivisionName,
 	)
 	return i, err
 }
 
 const getInvitationByTokenHash = `-- name: GetInvitationByTokenHash :one
-SELECT id, invited_by, email, role, division_id, name, phone_number, token_hash, expires_at, accepted_at, created_at
-FROM user_invitations
-WHERE token_hash = $1
+SELECT 
+    i.id, i.invited_by, i.email, i.role, i.division_id, i.name, i.phone_number, i.token_hash, i.expires_at, i.accepted_at, i.created_at,
+    d.name AS division_name
+FROM user_invitations i
+JOIN divisions d ON d.id = i.division_id
+WHERE i.token_hash = $1
 LIMIT 1
 `
 
-func (q *Queries) GetInvitationByTokenHash(ctx context.Context, tokenHash string) (UserInvitation, error) {
+type GetInvitationByTokenHashRow struct {
+	ID           uuid.UUID
+	InvitedBy    uuid.UUID
+	Email        string
+	Role         UserRole
+	DivisionID   int32
+	Name         pgtype.Text
+	PhoneNumber  pgtype.Text
+	TokenHash    string
+	ExpiresAt    time.Time
+	AcceptedAt   pgtype.Timestamptz
+	CreatedAt    time.Time
+	DivisionName string
+}
+
+func (q *Queries) GetInvitationByTokenHash(ctx context.Context, tokenHash string) (GetInvitationByTokenHashRow, error) {
 	row := q.db.QueryRow(ctx, getInvitationByTokenHash, tokenHash)
-	var i UserInvitation
+	var i GetInvitationByTokenHashRow
 	err := row.Scan(
 		&i.ID,
 		&i.InvitedBy,
@@ -131,6 +168,7 @@ func (q *Queries) GetInvitationByTokenHash(ctx context.Context, tokenHash string
 		&i.ExpiresAt,
 		&i.AcceptedAt,
 		&i.CreatedAt,
+		&i.DivisionName,
 	)
 	return i, err
 }

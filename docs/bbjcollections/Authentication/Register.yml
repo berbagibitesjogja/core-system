@@ -10,20 +10,24 @@ http:
     type: json
     data: |-
       {
-        "invitation_token": "b9e87ca6adb2e0d2c24b93752b7555b57caf50c79ced45ead12cabda4a08c7e0",
+        "invitation_token": "{{inviteToken}}",
         "password": "password",
         "name": "Budi Bakso",
         "phone_number": "6280000000000"
       }
+
       // {
       //   "invitation_token": unlimited
-      //   "password": unlimited
-      //   "name": string, max 255
+      //   "password": min 8, max 72
+      //   "name": max 255
       //   "phone_number": max 20
       // }
   auth: inherit
 
 runtime:
+  variables:
+    - name: inviteToken
+      value: 0cd7ef63fa363a415b4f5adda681309e02627e36fae0fc2e7388ce53732dce77
   scripts:
     - type: after-response
       code: |-
@@ -65,15 +69,16 @@ examples:
         type: json
         data: |-
           {
-            "invitation_token": "b9e87ca6adb2e0d2c24b93752b7555b57caf50c79ced45ead12cabda4a08c7e0",
+            "invitation_token": "{{inviteToken}}",
             "password": "password",
             "name": "Budi Bakso",
             "phone_number": "6280000000000"
           }
+
           // {
           //   "invitation_token": unlimited
-          //   "password": unlimited
-          //   "name": string, max 255
+          //   "password": min 8, max 72
+          //   "name": max 255
           //   "phone_number": max 20
           // }
     response:
@@ -99,13 +104,13 @@ examples:
         - name: x-frame-options
           value: DENY
         - name: x-request-id
-          value: ref_c285a83b
+          value: ref_0c79af53
         - name: x-xss-protection
           value: 1; mode=block
         - name: date
-          value: Sat, 31 Oct 2026 01:37:48 GMT
+          value: Wed, 11 Nov 2026 01:57:40 GMT
         - name: content-length
-          value: "770"
+          value: "874"
       body:
         type: json
         data: |-
@@ -113,18 +118,21 @@ examples:
             "status": "success",
             "message": "User registered successfully",
             "data": {
-              "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiOTNmMzIwZGItY2Y2YS00YzRkLWE2OTctYTk4OTU3YmQ3MGYwIiwiZW1haWwiOiJ1c2VyQGJlcmJhZ2liaXRlc2pvZ2phLmNvbSIsInJvbGUiOiJzdXBlciIsImRpdmlzaW9uX2lkIjoyLCJzdWIiOiI5M2YzMjBkYi1jZjZhLTRjNGQtYTY5Ny1hOTg5NTdiZDcwZjAiLCJleHAiOjE3OTM0MTE1NjgsImlhdCI6MTc5MzQxMDY2OH0.2puEsD7vT3xI3ceBEmU8d2yKfVMv1EMPaLGLQTs8Wfg",
-              "refresh_token": "1dcf9e5540df2f5aee6caccf3570450ddf10e5cdd4c1133eb962821a018d3470",
+              "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNDUyYWFjZGEtMjkyNC00M2IzLTlmNzAtNDU3MTQ5ZmQ1MmQyIiwiZW1haWwiOiJ1c2VyQGJlcmJhZ2liaXRlc2pvZ2phLmNvbSIsImlzX3N0YWZmIjp0cnVlLCJyb2xlIjoic3VwZXIiLCJkaXZpc2lvbl9pZCI6MiwiaXNfaGVybyI6ZmFsc2UsInN1YiI6IjQ1MmFhY2RhLTI5MjQtNDNiMy05ZjcwLTQ1NzE0OWZkNTJkMiIsImV4cCI6MTc5NDM2MzE2MCwiaWF0IjoxNzk0MzYyMjYwfQ.o3ceI_ggly5mKHKUBidlz4PtIc1ymH1Jwc7RYJM7wqw",
+              "refresh_token": "c9c0af4607721fd94e880d4f8db767439f2ea30dec1aefca146e4d78f76721df",
               "expires_in": 900,
               "user": {
-                "id": "93f320db-cf6a-4c4d-a697-a98957bd70f0",
+                "id": "452aacda-2924-43b3-9f70-457149fd52d2",
                 "email": "user@berbagibitesjogja.com",
-                "role": "super",
-                "division_id": 2,
                 "name": "Budi Bakso",
                 "phone_number": "6280000000000",
                 "is_active": true,
-                "email_verified_at": "2026-10-31T08:37:48+07:00"
+                "is_staff": true,
+                "role": "super",
+                "division_id": 2,
+                "division_name": "Managerial",
+                "is_hero": false,
+                "email_verified_at": "2026-11-11T08:57:40+07:00"
               }
             }
           }

@@ -72,6 +72,12 @@ func TestRegisterHandler(t *testing.T) {
 		if tokenResp.User.Email != testEmail || tokenResp.User.Role != "core" {
 			t.Fatalf("unexpected user response: %+v", tokenResp.User)
 		}
+		if !tokenResp.User.IsStaff || tokenResp.User.IsHero {
+			t.Fatalf("expected is_staff=true and is_hero=false, got: %+v", tokenResp.User)
+		}
+		if tokenResp.User.DivisionID != 2 {
+			t.Fatalf("expected division_id=2, got: %d", tokenResp.User.DivisionID)
+		}
 		if tokenResp.User.PhoneNumber != "6281299887766" {
 			t.Fatalf("expected normalized phone number '6281299887766', got %s", tokenResp.User.PhoneNumber)
 		}
@@ -298,7 +304,7 @@ func TestLoginRefreshAndLogoutFlow(t *testing.T) {
 	cfg := config.LoadConfig()
 	h := NewAuthHandler(pool, &cfg)
 
-	t.Run("successful login returns tokens and user profile", func(t *testing.T) {
+	t.Run("successful staff login returns tokens and staff role claims", func(t *testing.T) {
 		payload := LoginRequest{
 			Email:    "it@berbagibitesjogja.com",
 			Password: "password",
@@ -328,6 +334,196 @@ func TestLoginRefreshAndLogoutFlow(t *testing.T) {
 		}
 		if tokenResp.User.Email != "it@berbagibitesjogja.com" {
 			t.Fatalf("expected email 'it@berbagibitesjogja.com', got %q", tokenResp.User.Email)
+		}
+		if !tokenResp.User.IsStaff || tokenResp.User.IsHero {
+			t.Fatalf("expected is_staff=true and is_hero=false, got: %+v", tokenResp.User)
+		}
+		if tokenResp.User.Role != "super" || tokenResp.User.DivisionID != 1 || tokenResp.User.DivisionName != "IT" {
+			t.Fatalf("expected role='super', division_id=1, division_name='IT', got: role=%q, division_id=%d, division_name=%q", tokenResp.User.Role, tokenResp.User.DivisionID, tokenResp.User.DivisionName)
+		}
+	})
+
+	t.Run("successful hero login returns tokens and hero claims", func(t *testing.T) {
+		payload := LoginRequest{
+			Email:    "hero.ugm@mail.ugm.ac.id",
+			Password: "password",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(bodyBytes))
+		rec := httptest.NewRecorder()
+
+		h.LoginHandler(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d. Body: %s", rec.Code, rec.Body.String())
+		}
+
+		var resp response.Response
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		dataBytes, _ := json.Marshal(resp.Data)
+		var tokenResp AuthTokenResponse
+		_ = json.Unmarshal(dataBytes, &tokenResp)
+
+		if tokenResp.AccessToken == "" || tokenResp.RefreshToken == "" {
+			t.Fatal("expected access and refresh tokens")
+		}
+		if tokenResp.User.Email != "hero.ugm@mail.ugm.ac.id" {
+			t.Fatalf("expected email 'hero.ugm@mail.ugm.ac.id', got %q", tokenResp.User.Email)
+		}
+		if tokenResp.User.IsStaff || !tokenResp.User.IsHero {
+			t.Fatalf("expected is_staff=false and is_hero=true, got: %+v", tokenResp.User)
+		}
+		if tokenResp.User.Role != "" || tokenResp.User.DivisionID != 0 || tokenResp.User.DivisionName != "" {
+			t.Fatalf("expected empty role, division_id=0, division_name='' for hero, got: role=%q, division_id=%d, division_name=%q", tokenResp.User.Role, tokenResp.User.DivisionID, tokenResp.User.DivisionName)
+		}
+	})
+
+	t.Run("unverified account cannot log in and returns 403 EMAIL_NOT_VERIFIED", func(t *testing.T) {
+		payload := LoginRequest{
+			Email:    "hero.public@gmail.com",
+			Password: "password",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(bodyBytes))
+		rec := httptest.NewRecorder()
+
+		h.LoginHandler(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 Forbidden for unverified login, got %d. Body: %s", rec.Code, rec.Body.String())
+		}
+
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp.Code != "EMAIL_NOT_VERIFIED" {
+			t.Fatalf("expected code EMAIL_NOT_VERIFIED, got %q", resp.Code)
+		}
+	})
+
+	t.Run("invalid email format @ returns 400 VAL_001", func(t *testing.T) {
+		payload := LoginRequest{
+			Email:    "@",
+			Password: "password123!",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(bodyBytes))
+		rec := httptest.NewRecorder()
+
+		h.LoginHandler(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 Bad Request, got %d", rec.Code)
+		}
+	})
+
+
+	t.Run("refresh token rotation works and invalidates old token", func(t *testing.T) {
+		loginPayload := LoginRequest{
+			Email:    "it@berbagibitesjogja.com",
+			Password: "password",
+		}
+		loginBody, _ := json.Marshal(loginPayload)
+		loginReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(loginBody))
+		loginRec := httptest.NewRecorder()
+		h.LoginHandler(loginRec, loginReq)
+
+		var loginResp response.Response
+		_ = json.Unmarshal(loginRec.Body.Bytes(), &loginResp)
+		dataBytes, _ := json.Marshal(loginResp.Data)
+		var tokenResp AuthTokenResponse
+		_ = json.Unmarshal(dataBytes, &tokenResp)
+		initialRefreshToken := tokenResp.RefreshToken
+
+		// First refresh
+		refreshPayload := RefreshTokenRequest{RefreshToken: initialRefreshToken}
+		refreshBody, _ := json.Marshal(refreshPayload)
+		refreshReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", bytes.NewReader(refreshBody))
+		refreshRec := httptest.NewRecorder()
+		h.RefreshTokenHandler(refreshRec, refreshReq)
+
+		if refreshRec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK on first refresh, got %d. Body: %s", refreshRec.Code, refreshRec.Body.String())
+		}
+
+		var refreshResp response.Response
+		_ = json.Unmarshal(refreshRec.Body.Bytes(), &refreshResp)
+		rDataBytes, _ := json.Marshal(refreshResp.Data)
+		var rotatedResp RefreshTokenResponse
+		_ = json.Unmarshal(rDataBytes, &rotatedResp)
+
+		if rotatedResp.AccessToken == "" || rotatedResp.RefreshToken == "" {
+			t.Fatal("expected new tokens on refresh")
+		}
+		if rotatedResp.RefreshToken == initialRefreshToken {
+			t.Fatal("expected refresh token to be rotated to a new token")
+		}
+
+		// Replaying initial refresh token must fail with 401 Unauthorized
+		replayReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", bytes.NewReader(refreshBody))
+		ctx, _ := response.WithErrorContext(replayReq.Context())
+		replayReq = replayReq.WithContext(ctx)
+		replayRec := httptest.NewRecorder()
+		h.RefreshTokenHandler(replayRec, replayReq)
+
+		if replayRec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 Unauthorized when reusing revoked refresh token, got %d", replayRec.Code)
+		}
+
+		// Second refresh with newly rotated token should succeed
+		secondRefreshPayload := RefreshTokenRequest{RefreshToken: rotatedResp.RefreshToken}
+		secondRefreshBody, _ := json.Marshal(secondRefreshPayload)
+		secondRefreshReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", bytes.NewReader(secondRefreshBody))
+		secondRefreshRec := httptest.NewRecorder()
+		h.RefreshTokenHandler(secondRefreshRec, secondRefreshReq)
+
+		if secondRefreshRec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK on second refresh, got %d", secondRefreshRec.Code)
+		}
+	})
+
+	t.Run("logout revokes refresh token", func(t *testing.T) {
+		loginPayload := LoginRequest{
+			Email:    "it@berbagibitesjogja.com",
+			Password: "password",
+		}
+		loginBody, _ := json.Marshal(loginPayload)
+		loginReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(loginBody))
+		loginRec := httptest.NewRecorder()
+		h.LoginHandler(loginRec, loginReq)
+
+		var loginResp response.Response
+		_ = json.Unmarshal(loginRec.Body.Bytes(), &loginResp)
+		dataBytes, _ := json.Marshal(loginResp.Data)
+		var tokenResp AuthTokenResponse
+		_ = json.Unmarshal(dataBytes, &tokenResp)
+
+		logoutPayload := LogoutRequest{RefreshToken: tokenResp.RefreshToken}
+		logoutBody, _ := json.Marshal(logoutPayload)
+		logoutReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", bytes.NewReader(logoutBody))
+		logoutRec := httptest.NewRecorder()
+		h.LogoutHandler(logoutRec, logoutReq)
+
+		if logoutRec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK on logout, got %d. Body: %s", logoutRec.Code, logoutRec.Body.String())
+		}
+
+		// Subsequent refresh must fail with 401
+		refreshPayload := RefreshTokenRequest{RefreshToken: tokenResp.RefreshToken}
+		refreshBody, _ := json.Marshal(refreshPayload)
+		refreshReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", bytes.NewReader(refreshBody))
+		ctx, _ := response.WithErrorContext(refreshReq.Context())
+		refreshReq = refreshReq.WithContext(ctx)
+		refreshRec := httptest.NewRecorder()
+		h.RefreshTokenHandler(refreshRec, refreshReq)
+
+		if refreshRec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 Unauthorized after logout, got %d", refreshRec.Code)
 		}
 	})
 
@@ -374,6 +570,70 @@ func TestLoginRefreshAndLogoutFlow(t *testing.T) {
 		recordedErr := response.GetError(req.Context())
 		if recordedErr == nil || !strings.Contains(recordedErr.Error(), "user not found") {
 			t.Fatalf("expected context error to mention user not found, got: %v", recordedErr)
+		}
+	})
+
+	t.Run("login with deactivated account returns 403 Forbidden", func(t *testing.T) {
+		deactEmail := "deactivated.user@example.com"
+		hashedPass, _ := auth.HashPassword("password")
+		var deactID uuid.UUID
+		err := pool.QueryRow(context.Background(), `
+			INSERT INTO users (email, name, password_hash, is_active)
+			VALUES ($1, 'Deactivated Person', $2, false)
+			RETURNING id
+		`, deactEmail, hashedPass).Scan(&deactID)
+		if err != nil {
+			t.Fatalf("failed to insert deactivated user: %v", err)
+		}
+		defer func() {
+			_, _ = pool.Exec(context.Background(), "DELETE FROM users WHERE id = $1", deactID)
+		}()
+
+		payload := LoginRequest{
+			Email:    deactEmail,
+			Password: "password",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(bodyBytes))
+		ctx, _ := response.WithErrorContext(req.Context())
+		req = req.WithContext(ctx)
+		rec := httptest.NewRecorder()
+
+		h.LoginHandler(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 Forbidden for deactivated account, got %d. Body: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("login with deactivated account and wrong password returns 401 Unauthorized without leaking status", func(t *testing.T) {
+		deactEmail := "deactivated.probe@example.com"
+		hashedPass, _ := auth.HashPassword("correct-password")
+		var deactID uuid.UUID
+		err := pool.QueryRow(context.Background(), "INSERT INTO users (email, name, password_hash, is_active) VALUES ($1, 'Deactivated Probe', $2, false) RETURNING id", deactEmail, hashedPass).Scan(&deactID)
+		if err != nil {
+			t.Fatalf("failed to insert deactivated user: %v", err)
+		}
+		defer func() {
+			_, _ = pool.Exec(context.Background(), "DELETE FROM users WHERE id = $1", deactID)
+		}()
+
+		payload := LoginRequest{
+			Email:    deactEmail,
+			Password: "wrong-password",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(bodyBytes))
+		ctx, _ := response.WithErrorContext(req.Context())
+		req = req.WithContext(ctx)
+		rec := httptest.NewRecorder()
+
+		h.LoginHandler(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 Unauthorized for wrong password on deactivated account, got %d. Body: %s", rec.Code, rec.Body.String())
 		}
 	})
 }

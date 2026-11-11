@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/berbagibitesjogja/core-system/internal/auth"
 	"github.com/berbagibitesjogja/core-system/internal/config"
 	"github.com/berbagibitesjogja/core-system/internal/dbgen"
 	"github.com/berbagibitesjogja/core-system/internal/middleware"
@@ -20,7 +21,8 @@ import (
 )
 
 var allowedBeneficiaryCategoryVariants = map[string]bool{
-	"student":             true,
+	"university":          true,
+	"kipk":                true,
 	"orphanage":           true,
 	"nursing_home":        true,
 	"shelter":             true,
@@ -45,28 +47,51 @@ func NewBeneficiaryCategoryHandler(pool *pgxpool.Pool, cfg *config.Config) *Bene
 }
 
 type CreateBeneficiaryCategoryRequest struct {
-	Name    string `json:"name"`
-	Variant string `json:"variant"`
-	Hidden  *bool  `json:"hidden"`
+	Name        string  `json:"name"`
+	Address     *string `json:"address,omitempty"`
+	Maps        *string `json:"maps,omitempty"`
+	Variant     string  `json:"variant"`
+	EmailDomain *string `json:"email_domain,omitempty"`
+	IsPriority  *bool   `json:"is_priority,omitempty"`
+	Hidden      *bool   `json:"hidden,omitempty"`
 }
 
 type BeneficiaryCategoryResponse struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Variant   string `json:"variant"`
-	Hidden    bool   `json:"hidden"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Address     *string `json:"address,omitempty"`
+	Maps        *string `json:"maps,omitempty"`
+	Variant     string  `json:"variant"`
+	EmailDomain *string `json:"email_domain,omitempty"`
+	IsPriority  bool    `json:"is_priority"`
+	Hidden      bool    `json:"hidden"`
+	CreatedAt   string  `json:"created_at"`
+	UpdatedAt   string  `json:"updated_at"`
 }
 
 func toBeneficiaryCategoryResponse(cat dbgen.BeneficiaryCategory) BeneficiaryCategoryResponse {
+	var address, maps, emailDomain *string
+	if cat.Address.Valid {
+		address = &cat.Address.String
+	}
+	if cat.Maps.Valid {
+		maps = &cat.Maps.String
+	}
+	if cat.EmailDomain.Valid {
+		emailDomain = &cat.EmailDomain.String
+	}
+
 	return BeneficiaryCategoryResponse{
-		ID:        cat.ID.String(),
-		Name:      cat.Name,
-		Variant:   cat.Variant,
-		Hidden:    cat.Hidden,
-		CreatedAt: cat.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: cat.UpdatedAt.Format(time.RFC3339),
+		ID:          cat.ID.String(),
+		Name:        cat.Name,
+		Address:     address,
+		Maps:        maps,
+		Variant:     cat.Variant,
+		EmailDomain: emailDomain,
+		IsPriority:  cat.IsPriority,
+		Hidden:      cat.Hidden,
+		CreatedAt:   cat.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:   cat.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -92,7 +117,7 @@ func (h *BeneficiaryCategoryHandler) ListBeneficiaryCategoriesHandler(w http.Res
 
 	var hiddenParam pgtype.Bool
 	claims, hasClaims := middleware.GetClaims(r.Context())
-	isStaff := hasClaims && claims != nil
+	isStaff := hasClaims && claims != nil && claims.IsStaff
 
 	if !isStaff {
 		hiddenParam = pgtype.Bool{Bool: false, Valid: true}
@@ -175,7 +200,7 @@ func (h *BeneficiaryCategoryHandler) GetBeneficiaryCategoryByIDHandler(w http.Re
 
 	if cat.Hidden {
 		claims, ok := middleware.GetClaims(r.Context())
-		if !ok || claims == nil {
+		if !ok || claims == nil || !claims.IsStaff {
 			response.NotFound(w, r, "Beneficiary category not found")
 			return
 		}
@@ -204,12 +229,41 @@ func (h *BeneficiaryCategoryHandler) CreateBeneficiaryCategoryHandler(w http.Res
 	if req.Variant == "" {
 		fieldErrors["variant"] = "Variant is required"
 	} else if !allowedBeneficiaryCategoryVariants[req.Variant] {
-		fieldErrors["variant"] = "Invalid variant. Allowed: student, orphanage, nursing_home, shelter, religious_community, foundation, society, other"
+		fieldErrors["variant"] = "Invalid variant. Allowed: university, kipk, orphanage, nursing_home, shelter, religious_community, foundation, society, other"
+	}
+
+	var emailDomainParam pgtype.Text
+	if req.EmailDomain != nil {
+		trimmedDomain := strings.TrimSpace(*req.EmailDomain)
+		if trimmedDomain != "" {
+			if trimmedDomain != strings.ToLower(trimmedDomain) {
+				fieldErrors["email_domain"] = "Email domain must be lowercase"
+			} else if !auth.IsValidDomain(trimmedDomain) {
+				fieldErrors["email_domain"] = "Email domain must be a valid lowercase domain format (e.g. ugm.ac.id)"
+			}
+			if req.Variant != "" && req.Variant != "university" {
+				fieldErrors["email_domain"] = "Email domain can only be set for university variant"
+			}
+			emailDomainParam = pgtype.Text{String: strings.ToLower(trimmedDomain), Valid: true}
+		}
 	}
 
 	if len(fieldErrors) > 0 {
 		response.BadRequest(w, r, "VAL_001", "Validation failed", fieldErrors)
 		return
+	}
+
+	var addressParam, mapsParam pgtype.Text
+	if req.Address != nil && strings.TrimSpace(*req.Address) != "" {
+		addressParam = pgtype.Text{String: strings.TrimSpace(*req.Address), Valid: true}
+	}
+	if req.Maps != nil && strings.TrimSpace(*req.Maps) != "" {
+		mapsParam = pgtype.Text{String: strings.TrimSpace(*req.Maps), Valid: true}
+	}
+
+	isPriority := false
+	if req.IsPriority != nil {
+		isPriority = *req.IsPriority
 	}
 
 	hidden := false
@@ -218,9 +272,13 @@ func (h *BeneficiaryCategoryHandler) CreateBeneficiaryCategoryHandler(w http.Res
 	}
 
 	item, err := h.queries.CreateBeneficiaryCategory(r.Context(), dbgen.CreateBeneficiaryCategoryParams{
-		Name:    req.Name,
-		Variant: req.Variant,
-		Hidden:  hidden,
+		Name:        req.Name,
+		Address:     addressParam,
+		Maps:        mapsParam,
+		Variant:     req.Variant,
+		EmailDomain: emailDomainParam,
+		IsPriority:  isPriority,
+		Hidden:      hidden,
 	})
 	if err != nil {
 		if response.HandleDBError(w, r, err) {
@@ -258,10 +316,14 @@ func (h *BeneficiaryCategoryHandler) UpdateBeneficiaryCategoryHandler(w http.Res
 	}
 
 	updateParams := dbgen.UpdateBeneficiaryCategoryParams{
-		ID:      existing.ID,
-		Name:    existing.Name,
-		Variant: existing.Variant,
-		Hidden:  existing.Hidden,
+		ID:          existing.ID,
+		Name:        existing.Name,
+		Address:     existing.Address,
+		Maps:        existing.Maps,
+		Variant:     existing.Variant,
+		EmailDomain: existing.EmailDomain,
+		IsPriority:  existing.IsPriority,
+		Hidden:      existing.Hidden,
 	}
 
 	fieldErrors := make(map[string]string)
@@ -289,10 +351,92 @@ func (h *BeneficiaryCategoryHandler) UpdateBeneficiaryCategoryHandler(w http.Res
 		} else {
 			trimmed := strings.TrimSpace(strings.ToLower(variant))
 			if !allowedBeneficiaryCategoryVariants[trimmed] {
-				fieldErrors["variant"] = "Invalid variant. Allowed: student, orphanage, nursing_home, shelter, religious_community, foundation, society, other"
+				fieldErrors["variant"] = "Invalid variant. Allowed: university, kipk, orphanage, nursing_home, shelter, religious_community, foundation, society, other"
+			} else if trimmed != existing.Variant && trimmed != "university" && trimmed != "kipk" {
+				heroCount, countErr := h.queries.CountHeroesByCategoryID(r.Context(), catID)
+				if countErr == nil && heroCount > 0 {
+					fieldErrors["variant"] = "Cannot change category variant away from hero-eligible while heroes are actively enrolled in it"
+				} else {
+					updateParams.Variant = trimmed
+				}
 			} else {
 				updateParams.Variant = trimmed
 			}
+		}
+	}
+
+	if rawAddress, exists := rawMap["address"]; exists {
+		if string(rawAddress) == "null" {
+			updateParams.Address = pgtype.Text{Valid: false}
+		} else {
+			var address string
+			if err := json.Unmarshal(rawAddress, &address); err != nil {
+				fieldErrors["address"] = "Address must be a valid string"
+			} else {
+				trimmed := strings.TrimSpace(address)
+				if trimmed == "" {
+					updateParams.Address = pgtype.Text{Valid: false}
+				} else {
+					updateParams.Address = pgtype.Text{String: trimmed, Valid: true}
+				}
+			}
+		}
+	}
+
+	if rawMaps, exists := rawMap["maps"]; exists {
+		if string(rawMaps) == "null" {
+			updateParams.Maps = pgtype.Text{Valid: false}
+		} else {
+			var maps string
+			if err := json.Unmarshal(rawMaps, &maps); err != nil {
+				fieldErrors["maps"] = "Maps must be a valid string"
+			} else {
+				trimmed := strings.TrimSpace(maps)
+				if trimmed == "" {
+					updateParams.Maps = pgtype.Text{Valid: false}
+				} else {
+					updateParams.Maps = pgtype.Text{String: trimmed, Valid: true}
+				}
+			}
+		}
+	}
+
+	if rawEmailDomain, exists := rawMap["email_domain"]; exists {
+		if string(rawEmailDomain) == "null" {
+			updateParams.EmailDomain = pgtype.Text{Valid: false}
+		} else {
+			var domain string
+			if err := json.Unmarshal(rawEmailDomain, &domain); err != nil {
+				fieldErrors["email_domain"] = "Email domain must be a valid string"
+			} else {
+				trimmed := strings.TrimSpace(domain)
+				if trimmed == "" {
+					updateParams.EmailDomain = pgtype.Text{Valid: false}
+				} else {
+					if trimmed != strings.ToLower(trimmed) {
+						fieldErrors["email_domain"] = "Email domain must be lowercase"
+					} else if !auth.IsValidDomain(trimmed) {
+						fieldErrors["email_domain"] = "Email domain must be a valid lowercase domain format (e.g. ugm.ac.id)"
+					}
+					if updateParams.Variant != "university" {
+						fieldErrors["email_domain"] = "Email domain can only be set for university variant"
+					}
+					updateParams.EmailDomain = pgtype.Text{String: strings.ToLower(trimmed), Valid: true}
+				}
+			}
+		}
+	} else {
+		if updateParams.Variant != "university" && updateParams.EmailDomain.Valid {
+			fieldErrors["email_domain"] = "Email domain can only be set for university variant"
+		}
+	}
+
+	if rawIsPriority, exists := rawMap["is_priority"]; exists {
+		var isPriority bool
+		if err := json.Unmarshal(rawIsPriority, &isPriority); err != nil {
+			fieldErrors["is_priority"] = "is_priority must be a boolean"
+		} else {
+			updateParams.IsPriority = isPriority
 		}
 	}
 

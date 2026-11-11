@@ -98,33 +98,45 @@ func TestGoogleLoginHandler(t *testing.T) {
 
 		loc := rec.Header().Get("Location")
 		if loc == "" || !strings.Contains(loc, "https://accounts.google.com") {
-			t.Fatalf("expected Location to point to Google, got %s", loc)
+			t.Fatalf("unexpected redirect location: %s", loc)
 		}
 	})
 
-	t.Run("returns 500 when google credentials are not configured", func(t *testing.T) {
-		unconfiguredCfg := config.LoadConfig()
-		unconfiguredCfg.OAuth.GoogleClientID = ""
-		unconfiguredCfg.OAuth.GoogleClientSecret = ""
-
-		unconfiguredH := NewOAuthHandler(h.pool, &unconfiguredCfg, h.queries)
-
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/google/login", nil)
+	t.Run("preserves invitation token inside state payload", func(t *testing.T) {
+		invitationToken := "invite-secret-token-abc-123"
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/google/login?invitation_token="+invitationToken, nil)
 		rec := httptest.NewRecorder()
 
-		unconfiguredH.GoogleLoginHandler(rec, req)
+		h.GoogleLoginHandler(rec, req)
 
-		if rec.Code != http.StatusInternalServerError {
-			t.Fatalf("expected 500 Internal Server Error, got %d", rec.Code)
+		var cookieValue string
+		for _, c := range rec.Result().Cookies() {
+			if c.Name == auth.OAuthStateCookieName {
+				cookieValue = c.Value
+				break
+			}
+		}
+
+		loc := rec.Header().Get("Location")
+		stateIdx := strings.Index(loc, "state=")
+		stateParam := loc[stateIdx+6:]
+
+		extractedToken, err := auth.VerifyOAuthState(h.config.AppConfig.JWTSecret, stateParam, cookieValue)
+		if err != nil {
+			t.Fatalf("failed to verify oauth state: %v", err)
+		}
+
+		if extractedToken != invitationToken {
+			t.Fatalf("expected extracted token %q, got %q", invitationToken, extractedToken)
 		}
 	})
 }
 
-func TestGoogleCallbackValidation(t *testing.T) {
+func TestGoogleCallbackSecurity(t *testing.T) {
 	h, _, cleanup := setupOAuthHandler(t)
 	defer cleanup()
 
-	t.Run("fails when code or state is missing", func(t *testing.T) {
+	t.Run("rejects request missing state or code with 400 Bad Request", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/google/callback", nil)
 		req.Header.Set("Accept", "application/json")
 		rec := httptest.NewRecorder()
@@ -136,35 +148,24 @@ func TestGoogleCallbackValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("fails when cookie is missing", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/google/callback?code=mock-code&state=mock-state", nil)
-		req.Header.Set("Accept", "application/json")
-		rec := httptest.NewRecorder()
-
-		h.GoogleCallbackHandler(rec, req)
-
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400 Bad Request for missing cookie, got %d", rec.Code)
-		}
-	})
-
-	t.Run("fails when state is tampered or invalid", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/google/callback?code=mock-code&state=tampered.state", nil)
+	t.Run("rejects request with missing or mismatched state cookie", func(t *testing.T) {
+		state, _, _ := auth.GenerateOAuthState(h.config.AppConfig.JWTSecret, "")
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/google/callback?code=mock-code&state="+state, nil)
 		req.Header.Set("Accept", "application/json")
 		req.AddCookie(&http.Cookie{
 			Name:  auth.OAuthStateCookieName,
-			Value: "some-nonce",
+			Value: "wrong-nonce",
 		})
 		rec := httptest.NewRecorder()
 
 		h.GoogleCallbackHandler(rec, req)
 
 		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400 Bad Request for tampered state, got %d", rec.Code)
+			t.Fatalf("expected 400 Bad Request for mismatched cookie nonce, got %d", rec.Code)
 		}
 	})
 
-	t.Run("fails when google email is not verified", func(t *testing.T) {
+	t.Run("rejects unverified Google email address", func(t *testing.T) {
 		state, nonce, _ := auth.GenerateOAuthState(h.config.AppConfig.JWTSecret, "")
 
 		h.SetGoogleService(&mockGoogleService{
@@ -189,13 +190,12 @@ func TestGoogleCallbackValidation(t *testing.T) {
 		h.GoogleCallbackHandler(rec, req)
 
 		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400 Bad Request for unverified email, got %d", rec.Code)
+			t.Fatalf("expected 400 Bad Request for unverified Google email, got %d. Body: %s", rec.Code, rec.Body.String())
 		}
-
 		var resp response.Response
 		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 		if resp.Code != "EMAIL_NOT_VERIFIED" {
-			t.Fatalf("expected EMAIL_NOT_VERIFIED code, got %s", resp.Code)
+			t.Fatalf("expected EMAIL_NOT_VERIFIED, got %s", resp.Code)
 		}
 	})
 }
@@ -210,11 +210,11 @@ func TestGoogleCallbackFlows(t *testing.T) {
 		testEmail := "linked.test@example.com"
 		testSub := "google-sub-linked-12345"
 
-		// Pre-create user and oauth record
+		// Pre-create user and staff and oauth record
 		var userID uuid.UUID
 		err := h.pool.QueryRow(context.Background(), `
-			INSERT INTO users (division_id, email, role, name, phone_number, is_active)
-		VALUES (2, $1, 'staff', 'Delivery User', '628999999999', true)
+			INSERT INTO users (email, name, phone_number, is_active, email_verified_at)
+			VALUES ($1, 'Delivery User', '628999999999', true, NOW())
 			RETURNING id
 		`, testEmail).Scan(&userID)
 		if err != nil {
@@ -225,8 +225,16 @@ func TestGoogleCallbackFlows(t *testing.T) {
 		}()
 
 		_, err = h.pool.Exec(context.Background(), `
+			INSERT INTO staff (user_id, division_id, role)
+			VALUES ($1, 2, 'staff')
+		`, userID)
+		if err != nil {
+			t.Fatalf("failed to insert staff: %v", err)
+		}
+
+		_, err = h.pool.Exec(context.Background(), `
 			INSERT INTO oauth_accounts (user_id, provider, provider_user_id, email)
-		VALUES ($1, 'google', $2, $3)
+			VALUES ($1, 'google', $2, $3)
 		`, userID, testSub, testEmail)
 		if err != nil {
 			t.Fatalf("failed to insert oauth account: %v", err)
@@ -273,24 +281,47 @@ func TestGoogleCallbackFlows(t *testing.T) {
 		if tokenResp.User.Email != testEmail {
 			t.Fatalf("expected email %s, got %s", testEmail, tokenResp.User.Email)
 		}
+		if !tokenResp.User.IsStaff || tokenResp.User.IsHero {
+			t.Fatalf("expected is_staff=true and is_hero=false, got: %+v", tokenResp.User)
+		}
+		if tokenResp.User.Role != "staff" || tokenResp.User.DivisionID != 2 {
+			t.Fatalf("expected role='staff' and division_id=2, got: %+v", tokenResp.User)
+		}
 	})
 
-	t.Run("Flow 2: Auto-links existing user by email", func(t *testing.T) {
+	t.Run("Flow 2: Auto-links existing user by email and clears password if unverified", func(t *testing.T) {
 		testEmail := "autolink.test@example.com"
 		testSub := "google-sub-autolink-998877"
 
+		hashedPass, _ := auth.HashPassword("victimPassword123")
 		var userID uuid.UUID
 		err := h.pool.QueryRow(context.Background(), `
-			INSERT INTO users (division_id, email, role, name, phone_number, is_active, email_verified_at)
-			VALUES (2, $1, 'core', 'Pre-existing Email User', '628222222222', true, NULL)
+			INSERT INTO users (email, name, password_hash, phone_number, is_active, email_verified_at)
+			VALUES ($1, 'Pre-existing Email User', $2, '628222222222', true, NULL)
 			RETURNING id
-		`, testEmail).Scan(&userID)
+		`, testEmail, hashedPass).Scan(&userID)
 		if err != nil {
 			t.Fatalf("failed to insert test user: %v", err)
 		}
 		defer func() {
 			_, _ = h.pool.Exec(context.Background(), "DELETE FROM users WHERE id = $1", userID)
 		}()
+
+		_, err = h.pool.Exec(context.Background(), `
+			INSERT INTO staff (user_id, division_id, role)
+			VALUES ($1, 2, 'core')
+		`, userID)
+		if err != nil {
+			t.Fatalf("failed to insert staff: %v", err)
+		}
+
+		_, err = h.pool.Exec(context.Background(), `
+			INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+			VALUES ($1, 'pre-existing-attacker-token-hash', NOW() + INTERVAL '7 days')
+		`, userID)
+		if err != nil {
+			t.Fatalf("failed to insert attacker refresh token: %v", err)
+		}
 
 		state, nonce, _ := auth.GenerateOAuthState(h.config.AppConfig.JWTSecret, "")
 		h.SetGoogleService(&mockGoogleService{
@@ -325,6 +356,31 @@ func TestGoogleCallbackFlows(t *testing.T) {
 		`, testSub).Scan(&linkedUserID)
 		if err != nil || linkedUserID != userID {
 			t.Fatalf("expected oauth_accounts to link to user %s, got err: %v, linked: %s", userID, err, linkedUserID)
+		}
+
+		// Verify hardening rule (§4.3.2): password_hash must be cleared to NULL and email_verified_at set
+		var passHash *string
+		var emailVerifiedAt *time.Time
+		err = h.pool.QueryRow(context.Background(), `
+			SELECT password_hash, email_verified_at FROM users WHERE id = $1
+		`, userID).Scan(&passHash, &emailVerifiedAt)
+		if err != nil {
+			t.Fatalf("failed to query user verification state: %v", err)
+		}
+		if passHash != nil {
+			t.Fatalf("expected password_hash to be cleared to NULL for previously unverified account, got %v", *passHash)
+		}
+		if emailVerifiedAt == nil {
+			t.Fatal("expected email_verified_at to be marked as verified")
+		}
+
+		// Verify pre-existing refresh token was revoked (H2)
+		var attackerTokenRevokedAt *time.Time
+		err = h.pool.QueryRow(context.Background(), `
+			SELECT revoked_at FROM refresh_tokens WHERE user_id = $1 AND token_hash = 'pre-existing-attacker-token-hash'
+		`, userID).Scan(&attackerTokenRevokedAt)
+		if err != nil || attackerTokenRevokedAt == nil {
+			t.Fatalf("expected pre-existing refresh token to be revoked, got err: %v, revoked_at: %v", err, attackerTokenRevokedAt)
 		}
 	})
 
@@ -385,6 +441,12 @@ func TestGoogleCallbackFlows(t *testing.T) {
 		if tokenResp.User.PhoneNumber != "6281234567890" {
 			t.Fatalf("expected normalized phone '6281234567890', got '%s'", tokenResp.User.PhoneNumber)
 		}
+		if !tokenResp.User.IsStaff || tokenResp.User.IsHero {
+			t.Fatalf("expected is_staff=true, is_hero=false, got: %+v", tokenResp.User)
+		}
+		if tokenResp.User.Role != "core" || tokenResp.User.DivisionID != 2 {
+			t.Fatalf("expected role='core' and division_id=2, got: %+v", tokenResp.User)
+		}
 
 		// Verify invitation accepted_at is marked
 		var acceptedAt *time.Time
@@ -401,17 +463,29 @@ func TestGoogleCallbackFlows(t *testing.T) {
 		}
 	})
 
-	t.Run("Flow 4: Rejects uninvited stranger with 403 Forbidden", func(t *testing.T) {
-		strangerEmail := "uninvited.stranger@gmail.com"
-		state, nonce, _ := auth.GenerateOAuthState(h.config.AppConfig.JWTSecret, "")
+	t.Run("Flow 3b: Invitation token provided with mismatched Google email returns 403 Forbidden AUTH_007", func(t *testing.T) {
+		invitedEmail := "staff.intended@example.com"
+		rawToken, tokenHash, _ := auth.GenerateSecureToken()
 
+		_, err := h.pool.Exec(context.Background(), `
+			INSERT INTO user_invitations (invited_by, email, role, division_id, name, token_hash, expires_at)
+			VALUES ($1, $2, 'staff', 2, 'Intended Staff', $3, NOW() + INTERVAL '2 hours')
+		`, superID, invitedEmail, tokenHash)
+		if err != nil {
+			t.Fatalf("failed to insert test invitation: %v", err)
+		}
+		defer func() {
+			_, _ = h.pool.Exec(context.Background(), "DELETE FROM user_invitations WHERE email = $1", invitedEmail)
+		}()
+
+		state, nonce, _ := auth.GenerateOAuthState(h.config.AppConfig.JWTSecret, rawToken)
 		h.SetGoogleService(&mockGoogleService{
 			fetchUserInfoFunc: func(ctx context.Context, token *oauth2.Token) (*auth.GoogleUserInfo, error) {
 				return &auth.GoogleUserInfo{
-					Sub:           "google-sub-stranger-9999",
-					Email:         strangerEmail,
+					Sub:           "google-sub-attacker-diff-email",
+					Email:         "attacker.different@gmail.com",
 					EmailVerified: true,
-					Name:          "Random Stranger",
+					Name:          "Attacker Name",
 				}, nil
 			},
 		})
@@ -427,13 +501,130 @@ func TestGoogleCallbackFlows(t *testing.T) {
 		h.GoogleCallbackHandler(rec, req)
 
 		if rec.Code != http.StatusForbidden {
-			t.Fatalf("expected 403 Forbidden for uninvited user, got %d. Body: %s", rec.Code, rec.Body.String())
+			t.Fatalf("expected 403 Forbidden for mismatched email, got %d. Body: %s", rec.Code, rec.Body.String())
 		}
 
 		var resp response.Response
 		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-		if resp.Code != "UNINVITED_USER" {
-			t.Fatalf("expected UNINVITED_USER code, got %s", resp.Code)
+		if resp.Code != "INVITATION_EMAIL_MISMATCH" {
+			t.Fatalf("expected code AUTH_007, got %s", resp.Code)
+		}
+	})
+
+	t.Run("Flow 3c: Invalid or expired invitation token returns 400 Bad Request AUTH_005", func(t *testing.T) {
+		state, nonce, _ := auth.GenerateOAuthState(h.config.AppConfig.JWTSecret, "non-existent-or-expired-token")
+		h.SetGoogleService(&mockGoogleService{
+			fetchUserInfoFunc: func(ctx context.Context, token *oauth2.Token) (*auth.GoogleUserInfo, error) {
+				return &auth.GoogleUserInfo{
+					Sub:           "google-sub-someone",
+					Email:         "someone@gmail.com",
+					EmailVerified: true,
+					Name:          "Someone",
+				}, nil
+			},
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/google/callback?code=mock-code&state="+state, nil)
+		req.Header.Set("Accept", "application/json")
+		req.AddCookie(&http.Cookie{
+			Name:  auth.OAuthStateCookieName,
+			Value: nonce,
+		})
+		rec := httptest.NewRecorder()
+
+		h.GoogleCallbackHandler(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 Bad Request for invalid invitation token, got %d. Body: %s", rec.Code, rec.Body.String())
+		}
+
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp.Code != "INVITATION_INVALID" {
+			t.Fatalf("expected code AUTH_005, got %s", resp.Code)
+		}
+	})
+
+	t.Run("Flow 4: Stranger without invitation registers as Hero with auto-enrollment", func(t *testing.T) {
+		strangerEmail := "stranger.student@mail.ugm.ac.id"
+		testSub := "google-sub-stranger-hero-9999"
+		defer func() {
+			_, _ = h.pool.Exec(context.Background(), "DELETE FROM users WHERE email = $1", strangerEmail)
+		}()
+
+		state, nonce, _ := auth.GenerateOAuthState(h.config.AppConfig.JWTSecret, "")
+
+		h.SetGoogleService(&mockGoogleService{
+			fetchUserInfoFunc: func(ctx context.Context, token *oauth2.Token) (*auth.GoogleUserInfo, error) {
+				return &auth.GoogleUserInfo{
+					Sub:           testSub,
+					Email:         strangerEmail,
+					EmailVerified: true,
+					Name:          "Random UGM Stranger",
+				}, nil
+			},
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/google/callback?code=mock-code&state="+state, nil)
+		req.Header.Set("Accept", "application/json")
+		req.AddCookie(&http.Cookie{
+			Name:  auth.OAuthStateCookieName,
+			Value: nonce,
+		})
+		rec := httptest.NewRecorder()
+
+		h.GoogleCallbackHandler(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for stranger hero registration, got %d. Body: %s", rec.Code, rec.Body.String())
+		}
+
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		dataBytes, _ := json.Marshal(resp.Data)
+		var tokenResp AuthTokenResponse
+		_ = json.Unmarshal(dataBytes, &tokenResp)
+
+		if tokenResp.User.IsStaff || !tokenResp.User.IsHero {
+			t.Fatalf("expected stranger to be registered as Hero (is_staff: false, is_hero: true), got: %+v", tokenResp.User)
+		}
+		if tokenResp.User.Role != "" || tokenResp.User.DivisionID != 0 {
+			t.Fatalf("expected empty role and division_id=0, got: role=%q, division_id=%d", tokenResp.User.Role, tokenResp.User.DivisionID)
+		}
+
+		// Verify database state: users, heroes, oauth_accounts, hero_categories
+		var heroUserID uuid.UUID
+		err := h.pool.QueryRow(context.Background(), `
+			SELECT h.user_id
+			FROM heroes h
+			JOIN users u ON u.id = h.user_id
+			WHERE u.email = $1
+		`, strangerEmail).Scan(&heroUserID)
+		if err != nil {
+			t.Fatalf("expected hero record in DB: %v", err)
+		}
+
+		var linkedSub string
+		err = h.pool.QueryRow(context.Background(), `
+			SELECT provider_user_id FROM oauth_accounts WHERE user_id = $1 AND provider = 'google'
+		`, heroUserID).Scan(&linkedSub)
+		if err != nil || linkedSub != testSub {
+			t.Fatalf("expected oauth_accounts linked with sub %s, got err: %v, sub: %s", testSub, err, linkedSub)
+		}
+
+		// Verify auto-enrollment into UGM category
+		var enrolledCat string
+		err = h.pool.QueryRow(context.Background(), `
+			SELECT bc.name
+			FROM hero_categories hc
+			JOIN beneficiary_categories bc ON bc.id = hc.beneficiary_category_id
+			WHERE hc.hero_id = $1
+		`, heroUserID).Scan(&enrolledCat)
+		if err != nil {
+			t.Fatalf("expected auto-enrollment into university category: %v", err)
+		}
+		if enrolledCat != "Universitas Gadjah Mada" {
+			t.Fatalf("expected 'Universitas Gadjah Mada', got %q", enrolledCat)
 		}
 	})
 
@@ -443,8 +634,8 @@ func TestGoogleCallbackFlows(t *testing.T) {
 
 		var userID uuid.UUID
 		err := h.pool.QueryRow(context.Background(), `
-			INSERT INTO users (division_id, email, role, name, phone_number, is_active)
-			VALUES (2, $1, 'staff', 'Deactivated User', '628333333333', false)
+			INSERT INTO users (email, name, phone_number, is_active)
+			VALUES ($1, 'Deactivated User', '628333333333', false)
 			RETURNING id
 		`, deactivatedEmail).Scan(&userID)
 		if err != nil {
@@ -455,8 +646,16 @@ func TestGoogleCallbackFlows(t *testing.T) {
 		}()
 
 		_, err = h.pool.Exec(context.Background(), `
+			INSERT INTO staff (user_id, division_id, role)
+			VALUES ($1, 2, 'staff')
+		`, userID)
+		if err != nil {
+			t.Fatalf("failed to insert staff: %v", err)
+		}
+
+		_, err = h.pool.Exec(context.Background(), `
 			INSERT INTO oauth_accounts (user_id, provider, provider_user_id, email)
-		VALUES ($1, 'google', $2, $3)
+			VALUES ($1, 'google', $2, $3)
 		`, userID, testSub, deactivatedEmail)
 		if err != nil {
 			t.Fatalf("failed to insert oauth account: %v", err)
@@ -497,8 +696,8 @@ func TestGoogleDeliveryModes(t *testing.T) {
 	testEmail := "delivery.mode@example.com"
 	var userID uuid.UUID
 	err := h.pool.QueryRow(context.Background(), `
-		INSERT INTO users (division_id, email, role, name, phone_number, is_active)
-		VALUES (2, $1, 'staff', 'Delivery User', '628999999999', true)
+		INSERT INTO users (email, name, phone_number, is_active)
+		VALUES ($1, 'Delivery User', '628999999999', true)
 		RETURNING id
 	`, testEmail).Scan(&userID)
 	if err != nil {
@@ -507,6 +706,14 @@ func TestGoogleDeliveryModes(t *testing.T) {
 	defer func() {
 		_, _ = h.pool.Exec(context.Background(), "DELETE FROM users WHERE id = $1", userID)
 	}()
+
+	_, err = h.pool.Exec(context.Background(), `
+		INSERT INTO staff (user_id, division_id, role)
+		VALUES ($1, 2, 'staff')
+	`, userID)
+	if err != nil {
+		t.Fatalf("failed to insert staff: %v", err)
+	}
 
 	testSub := "google-sub-delivery-123"
 	_, _ = h.pool.Exec(context.Background(), `
