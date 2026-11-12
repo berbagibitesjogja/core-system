@@ -28,7 +28,76 @@ settings:
   maxRedirects: 5
 
 examples:
-  - name: "200"
+  - name: "200 Public (Hero / Public)"
+    request:
+      url: "{{base_url}}/donations?page=1&limit=10&status=open&search="
+      method: GET
+      params:
+        - name: page
+          value: "1"
+          type: query
+        - name: limit
+          value: "10"
+          type: query
+        - name: status
+          value: "open"
+          type: query
+        - name: search
+          value: ""
+          type: query
+    response:
+      status: 200
+      statusText: OK
+      headers:
+        - name: content-type
+          value: application/json; charset=utf-8
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "Donations retrieved successfully",
+            "data": [
+              {
+                "id": "d97fce39-d4ff-4d27-8d97-6c096edd2b64",
+                "event_at": "2026-11-20T17:00:00+07:00",
+                "hero_quota": 25,
+                "remain": 25,
+                "is_full": false,
+                "address": "Di UGM",
+                "maps": "https://ugm.ac.id",
+                "message": "Masuk UGM belok kanan",
+                "status": "open",
+                "sponsor": {
+                  "id": null,
+                  "name": "Generous sponsor",
+                  "logo": null
+                },
+                "foods": [
+                  {
+                    "food_item_id": 1,
+                    "name": "Acar",
+                    "quantity": 50,
+                    "unit": "kg"
+                  }
+                ],
+                "targets": [
+                  {
+                    "beneficiary_category_id": null,
+                    "name": "Hidden institution",
+                    "variant": null
+                  }
+                ]
+              }
+            ],
+            "meta": {
+              "page": 1,
+              "limit": 10,
+              "total": 1,
+              "total_pages": 1
+            }
+          }
+  - name: "200 Staff (Backoffice)"
     request:
       url: "{{base_url}}/donations?page=1&limit=10&status=&search="
       method: GET
@@ -49,32 +118,8 @@ examples:
       status: 200
       statusText: OK
       headers:
-        - name: access-control-allow-headers
-          value: Content-Type, Authorization, X-Requested-With, Accept, Origin
-        - name: access-control-allow-methods
-          value: GET, POST, PUT, PATCH, DELETE, OPTIONS
-        - name: access-control-allow-origin
-          value: "*"
-        - name: access-control-expose-headers
-          value: Content-Length, Content-Type
-        - name: access-control-max-age
-          value: "86400"
         - name: content-type
           value: application/json; charset=utf-8
-        - name: referrer-policy
-          value: strict-origin-when-cross-origin
-        - name: x-content-type-options
-          value: nosniff
-        - name: x-frame-options
-          value: DENY
-        - name: x-request-id
-          value: ref_50174e23
-        - name: x-xss-protection
-          value: 1; mode=block
-        - name: date
-          value: Thu, 12 Nov 2026 07:43:53 GMT
-        - name: content-length
-          value: "1865"
       body:
         type: json
         data: |-
@@ -104,7 +149,8 @@ examples:
                   "hide_donations": true,
                   "email": "it@berbagibitesjogja.com",
                   "phone": "620000000001",
-                  "address": "Di Sini Senang"
+                  "address": "Di Sini Senang",
+                  "is_deleted": false
                 },
                 "created_by": {
                   "id": "00000000-0000-0000-0000-000000000001",
@@ -148,7 +194,8 @@ examples:
                   "hide_donations": false,
                   "email": "it@berbagibitesjogja.com",
                   "phone": "6200000000002",
-                  "address": "Di Sleman"
+                  "address": "Di Sleman",
+                  "is_deleted": false
                 },
                 "created_by": {
                   "id": "00000000-0000-0000-0000-000000000001",

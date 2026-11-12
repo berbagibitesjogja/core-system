@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -494,6 +495,428 @@ func TestSponsorVisibilityAndFiltering(t *testing.T) {
 		}
 		if resp.Meta.Limit != 1 || resp.Meta.Page != 1 {
 			t.Errorf("expected page 1 limit 1, got page %d limit %d", resp.Meta.Page, resp.Meta.Limit)
+		}
+	})
+}
+
+
+func TestPublicSponsorKeyWhitelist(t *testing.T) {
+	pool := getTestPool(t)
+	defer pool.Close()
+
+	cfg := config.LoadConfig()
+	h := NewSponsorHandler(pool, &cfg)
+
+	testName := "Whitelist Sponsor " + uuid.NewString()[:8]
+	defer func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM sponsors WHERE name LIKE 'Whitelist %'")
+	}()
+
+	variant := "company"
+	address := "Jl. Kaliurang KM 5, Yogyakarta"
+	email := "contact@whitelist-test.org"
+	phone := "0812-9999-8888"
+	hidden := false
+	hideDonations := false
+
+	body, _ := json.Marshal(CreateSponsorRequest{
+		Name:          testName,
+		Variant:       &variant,
+		Address:       &address,
+		Email:         &email,
+		Phone:         &phone,
+		Hidden:        &hidden,
+		HideDonations: &hideDonations,
+	})
+
+	createReq := setStaffAuth(httptest.NewRequest(http.MethodPost, "/api/v1/sponsors", bytes.NewReader(body)))
+	createRec := httptest.NewRecorder()
+	h.CreateSponsorHandler(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("failed to create sponsor: %s", createRec.Body.String())
+	}
+
+	var createResp response.Response
+	_ = json.Unmarshal(createRec.Body.Bytes(), &createResp)
+	createdData, _ := json.Marshal(createResp.Data)
+	var spResp SponsorResponse
+	_ = json.Unmarshal(createdData, &spResp)
+	createdID := spResp.ID
+
+	expectedPublicKeys := map[string]bool{
+		"id":      true,
+		"name":    true,
+		"variant": true,
+		"logo":    true,
+	}
+
+	assertExactKeys := func(t *testing.T, data map[string]any, roleName string) {
+		t.Helper()
+		if len(data) != len(expectedPublicKeys) {
+			t.Errorf("[%s] expected exactly %d keys, got %d: %v", roleName, len(expectedPublicKeys), len(data), data)
+		}
+		for k := range data {
+			if !expectedPublicKeys[k] {
+				t.Errorf("[%s] forbidden key leaked in public response: %s", roleName, k)
+			}
+		}
+	}
+
+	t.Run("Anonymous GET /api/v1/sponsors key whitelist", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/sponsors?search="+url.QueryEscape(testName), nil)
+		rec := httptest.NewRecorder()
+		h.ListSponsorsHandler(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to unmarshal JSON: %v", err)
+		}
+		items, ok := resp["data"].([]any)
+		if !ok || len(items) == 0 {
+			t.Fatalf("expected non-empty data array, got: %v", resp["data"])
+		}
+
+		found := false
+		for _, item := range items {
+			itemMap, ok := item.(map[string]any)
+			if !ok {
+				t.Fatalf("expected map[string]any item, got: %T", item)
+			}
+			if itemMap["id"] == createdID {
+				found = true
+				assertExactKeys(t, itemMap, "anonymous-list")
+			}
+		}
+		if !found {
+			t.Fatalf("created sponsor %s not found in public list", createdID)
+		}
+	})
+
+	t.Run("Anonymous GET /api/v1/sponsors/:id key whitelist", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/sponsors/"+createdID, nil)
+		req.SetPathValue("id", createdID)
+		rec := httptest.NewRecorder()
+		h.GetSponsorByIDHandler(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to unmarshal JSON: %v", err)
+		}
+		itemMap, ok := resp["data"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected map[string]any item, got: %T", resp["data"])
+		}
+		assertExactKeys(t, itemMap, "anonymous-detail")
+	})
+
+	t.Run("Hero GET /api/v1/sponsors/:id key whitelist", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/sponsors/"+createdID, nil)
+		req.SetPathValue("id", createdID)
+		req = setHeroAuth(req)
+		rec := httptest.NewRecorder()
+		h.GetSponsorByIDHandler(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to unmarshal JSON: %v", err)
+		}
+		itemMap, ok := resp["data"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected map[string]any item, got: %T", resp["data"])
+		}
+		assertExactKeys(t, itemMap, "hero-detail")
+	})
+
+	t.Run("Staff GET /api/v1/sponsors/:id retains full fields", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/sponsors/"+createdID, nil)
+		req.SetPathValue("id", createdID)
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+		h.GetSponsorByIDHandler(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to unmarshal JSON: %v", err)
+		}
+		itemMap, ok := resp["data"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected map[string]any item, got: %T", resp["data"])
+		}
+		requiredStaffKeys := []string{"email", "phone", "address", "hidden", "hide_donations", "created_at", "updated_at"}
+		for _, k := range requiredStaffKeys {
+			if _, exists := itemMap[k]; !exists {
+				t.Errorf("staff detail missing expected field %s", k)
+			}
+		}
+	})
+}
+
+func TestSponsorDefensiveHygiene(t *testing.T) {
+	pool := getTestPool(t)
+	defer pool.Close()
+
+	cfg := config.LoadConfig()
+	h := NewSponsorHandler(pool, &cfg)
+	ctx := context.Background()
+
+	// 1. Strict Email Validation
+	t.Run("Reject RFC 5322 formatted email containing name", func(t *testing.T) {
+		body := map[string]any{
+			"name":  "Strict Email Sponsor",
+			"email": "Jane Doe <jane@example.com>",
+		}
+		bodyBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/sponsors", bytes.NewReader(bodyBytes))
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+
+		h.CreateSponsorHandler(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 Bad Request, got %d", rec.Code)
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		errs, ok := resp["errors"].(map[string]any)
+		if !ok || errs["email"] != "Invalid email format" {
+			t.Errorf("expected email validation error, got: %+v", resp)
+		}
+	})
+
+	t.Run("Reject invalid email format", func(t *testing.T) {
+		body := map[string]any{
+			"name":  "Invalid Email Sponsor",
+			"email": "notanemail@",
+		}
+		bodyBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/sponsors", bytes.NewReader(bodyBytes))
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+
+		h.CreateSponsorHandler(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 Bad Request, got %d", rec.Code)
+		}
+	})
+
+	// 2. Logo file validation in files table
+	t.Run("Reject non-existent logo file UUID", func(t *testing.T) {
+		fakeFileID := uuid.NewString()
+		body := map[string]any{
+			"name": "Missing Logo Sponsor",
+			"logo": fakeFileID,
+		}
+		bodyBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/sponsors", bytes.NewReader(bodyBytes))
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+
+		h.CreateSponsorHandler(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 Bad Request, got %d", rec.Code)
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		errs, ok := resp["errors"].(map[string]any)
+		if !ok || errs["logo"] != "Referenced logo file does not exist" {
+			t.Errorf("expected logo error 'Referenced logo file does not exist', got: %+v", resp)
+		}
+	})
+
+	t.Run("Reject logo file with status uploading", func(t *testing.T) {
+		var unuploadedID uuid.UUID
+		err := pool.QueryRow(ctx, `
+			INSERT INTO files (storage_bucket, storage_key, status, mime_type)
+			VALUES ('public', 'sponsors/unuploaded.png', 'uploading', 'image/png')
+			RETURNING id;
+		`).Scan(&unuploadedID)
+		if err != nil {
+			t.Fatalf("failed to insert unuploaded file: %v", err)
+		}
+		defer func() {
+			_, _ = pool.Exec(ctx, "DELETE FROM files WHERE id = $1", unuploadedID)
+		}()
+
+		body := map[string]any{
+			"name": "Unuploaded Logo Sponsor",
+			"logo": unuploadedID.String(),
+		}
+		bodyBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/sponsors", bytes.NewReader(bodyBytes))
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+
+		h.CreateSponsorHandler(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 Bad Request, got %d", rec.Code)
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		errs, ok := resp["errors"].(map[string]any)
+		if !ok || errs["logo"] != "File not found or not uploaded" {
+			t.Errorf("expected logo error 'File not found or not uploaded', got: %+v", resp)
+		}
+	})
+
+	t.Run("Reject logo file in private bucket", func(t *testing.T) {
+		var privateID uuid.UUID
+		err := pool.QueryRow(ctx, `
+			INSERT INTO files (storage_bucket, storage_key, status, mime_type)
+			VALUES ('private', 'sponsors/secret.png', 'uploaded', 'image/png')
+			RETURNING id;
+		`).Scan(&privateID)
+		if err != nil {
+			t.Fatalf("failed to insert private file: %v", err)
+		}
+		defer func() {
+			_, _ = pool.Exec(ctx, "DELETE FROM files WHERE id = $1", privateID)
+		}()
+
+		body := map[string]any{
+			"name": "Private Logo Sponsor",
+			"logo": privateID.String(),
+		}
+		bodyBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/sponsors", bytes.NewReader(bodyBytes))
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+
+		h.CreateSponsorHandler(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 Bad Request, got %d", rec.Code)
+		}
+	})
+
+	t.Run("Reject non-image logo file", func(t *testing.T) {
+		var pdfID uuid.UUID
+		err := pool.QueryRow(ctx, `
+			INSERT INTO files (storage_bucket, storage_key, status, mime_type)
+			VALUES ('public', 'sponsors/doc.pdf', 'uploaded', 'application/pdf')
+			RETURNING id;
+		`).Scan(&pdfID)
+		if err != nil {
+			t.Fatalf("failed to insert pdf file: %v", err)
+		}
+		defer func() {
+			_, _ = pool.Exec(ctx, "DELETE FROM files WHERE id = $1", pdfID)
+		}()
+
+		body := map[string]any{
+			"name": "PDF Logo Sponsor",
+			"logo": pdfID.String(),
+		}
+		bodyBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/sponsors", bytes.NewReader(bodyBytes))
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+
+		h.CreateSponsorHandler(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 Bad Request, got %d", rec.Code)
+		}
+	})
+
+	t.Run("Accept valid uploaded logo file", func(t *testing.T) {
+		var uploadedID uuid.UUID
+		err := pool.QueryRow(ctx, `
+			INSERT INTO files (storage_bucket, storage_key, status, mime_type)
+			VALUES ('public', 'sponsors/uploaded.png', 'uploaded', 'image/png')
+			RETURNING id;
+		`).Scan(&uploadedID)
+		if err != nil {
+			t.Fatalf("failed to insert uploaded file: %v", err)
+		}
+		defer func() {
+			_, _ = pool.Exec(ctx, "DELETE FROM sponsors WHERE name = 'Uploaded Logo Sponsor'")
+			_, _ = pool.Exec(ctx, "DELETE FROM files WHERE id = $1", uploadedID)
+		}()
+
+		body := map[string]any{
+			"name":  "Uploaded Logo Sponsor",
+			"email": "uploaded@example.com",
+			"logo":  uploadedID.String(),
+		}
+		bodyBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/sponsors", bytes.NewReader(bodyBytes))
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+
+		h.CreateSponsorHandler(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201 Created, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	// 3. Search wildcard escaping
+	t.Run("Literal % and _ in sponsor search are escaped", func(t *testing.T) {
+		_, err := pool.Exec(ctx, `
+			INSERT INTO sponsors (name, email, variant)
+			VALUES
+				('Wildcard 100% Sponsor', 'wild1@example.com', 'individual'),
+				('Wildcard 1000 Sponsor', 'wild2@example.com', 'individual'),
+				('Wildcard a_b Sponsor', 'wild3@example.com', 'individual'),
+				('Wildcard axb Sponsor', 'wild4@example.com', 'individual');
+		`)
+		if err != nil {
+			t.Fatalf("failed to insert wildcard test sponsors: %v", err)
+		}
+		defer func() {
+			_, _ = pool.Exec(ctx, "DELETE FROM sponsors WHERE name LIKE 'Wildcard %'")
+		}()
+
+		// Search for literal % (URL-encoded as %25)
+		searchURL := "/api/v1/sponsors?search=" + url.QueryEscape("100%")
+		req := httptest.NewRequest(http.MethodGet, searchURL, nil)
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+		h.ListSponsorsHandler(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		dataBytes, _ := json.Marshal(resp.Data)
+		var list []SponsorResponse
+		_ = json.Unmarshal(dataBytes, &list)
+
+		if len(list) != 1 || list[0].Name != "Wildcard 100% Sponsor" {
+			t.Errorf("expected 1 result matching literal 100%%, got %d: %+v", len(list), list)
+		}
+
+		// Search for literal _
+		searchURL2 := "/api/v1/sponsors?search=" + url.QueryEscape("a_b")
+		req2 := httptest.NewRequest(http.MethodGet, searchURL2, nil)
+		req2 = setStaffAuth(req2)
+		rec2 := httptest.NewRecorder()
+		h.ListSponsorsHandler(rec2, req2)
+
+		if rec2.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec2.Code)
+		}
+		var resp2 response.Response
+		_ = json.Unmarshal(rec2.Body.Bytes(), &resp2)
+		dataBytes2, _ := json.Marshal(resp2.Data)
+		var list2 []SponsorResponse
+		_ = json.Unmarshal(dataBytes2, &list2)
+
+		if len(list2) != 1 || list2[0].Name != "Wildcard a_b Sponsor" {
+			t.Errorf("expected 1 result matching literal a_b, got %d: %+v", len(list2), list2)
 		}
 	})
 }

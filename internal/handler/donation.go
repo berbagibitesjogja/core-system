@@ -77,9 +77,9 @@ type FoodResponse struct {
 }
 
 type TargetResponse struct {
-	BeneficiaryCategoryID string `json:"beneficiary_category_id"`
-	Name                  string `json:"name"`
-	Variant               string `json:"variant"`
+	BeneficiaryCategoryID *string `json:"beneficiary_category_id"`
+	Name                  string  `json:"name"`
+	Variant               *string `json:"variant"`
 }
 
 type StaffSponsorResponse struct {
@@ -88,6 +88,7 @@ type StaffSponsorResponse struct {
 	Logo          *string `json:"logo"`
 	Hidden        bool    `json:"hidden"`
 	HideDonations bool    `json:"hide_donations"`
+	IsDeleted     bool    `json:"is_deleted"`
 	Email         *string `json:"email"`
 	Phone         *string `json:"phone"`
 	Address       *string `json:"address"`
@@ -241,9 +242,7 @@ func ValidateCreateDonationRequest(req CreateDonationRequest) (uuid.UUID, time.T
 		}
 	}
 
-	if len(req.BeneficiaryCategoryIDs) == 0 {
-		fieldErrors["beneficiary_category_ids"] = "At least one beneficiary category is required"
-	} else {
+	if len(req.BeneficiaryCategoryIDs) > 0 {
 		seenTargets := make(map[uuid.UUID]bool)
 		for _, tStr := range req.BeneficiaryCategoryIDs {
 			parsed, err := uuid.Parse(strings.TrimSpace(tStr))
@@ -351,30 +350,26 @@ func ValidateUpdateDonationRequest(req UpdateDonationRequest) (
 		}
 	}
 
-	if req.BeneficiaryCategoryIDs != nil {
-		if len(req.BeneficiaryCategoryIDs) == 0 {
-			fieldErrors["beneficiary_category_ids"] = "At least one beneficiary category is required"
-		} else {
-			seenTargets := make(map[uuid.UUID]bool)
-			for _, tStr := range req.BeneficiaryCategoryIDs {
-				parsed, err := uuid.Parse(strings.TrimSpace(tStr))
-				if err != nil {
-					fieldErrors["beneficiary_category_ids"] = "Invalid beneficiary category ID format"
-					break
-				}
-				if seenTargets[parsed] {
-					fieldErrors["beneficiary_category_ids"] = fmt.Sprintf("Duplicate beneficiary category ID %s in target list", parsed.String())
-					break
-				}
-				seenTargets[parsed] = true
+	if req.BeneficiaryCategoryIDs != nil && len(req.BeneficiaryCategoryIDs) > 0 {
+		seenTargets := make(map[uuid.UUID]bool)
+		for _, tStr := range req.BeneficiaryCategoryIDs {
+			parsed, err := uuid.Parse(strings.TrimSpace(tStr))
+			if err != nil {
+				fieldErrors["beneficiary_category_ids"] = "Invalid beneficiary category ID format"
+				break
 			}
+			if seenTargets[parsed] {
+				fieldErrors["beneficiary_category_ids"] = fmt.Sprintf("Duplicate beneficiary category ID %s in target list", parsed.String())
+				break
+			}
+			seenTargets[parsed] = true
 		}
 	}
 
 	return sponsorUUID, eventTime, fieldErrors
 }
 
-func BuildStaffSponsorResponse(sponsorID uuid.UUID, name string, logo pgtype.UUID, hidden, hideDonations bool, email, phone, address pgtype.Text) StaffSponsorResponse {
+func BuildStaffSponsorResponse(sponsorID uuid.UUID, name string, logo pgtype.UUID, hidden, hideDonations, isDeleted bool, email, phone, address pgtype.Text) StaffSponsorResponse {
 	var logoStr *string
 	if logo.Valid {
 		str := uuid.UUID(logo.Bytes).String()
@@ -402,6 +397,7 @@ func BuildStaffSponsorResponse(sponsorID uuid.UUID, name string, logo pgtype.UUI
 		Logo:          logoStr,
 		Hidden:        hidden,
 		HideDonations: hideDonations,
+		IsDeleted:     isDeleted,
 		Email:         emailStr,
 		Phone:         phoneStr,
 		Address:       addressStr,
@@ -454,14 +450,25 @@ func buildFoodResponses(foodsList []dbgen.ListFoodsByDonationIDRow) []FoodRespon
 
 func buildTargetResponses(targetsList []dbgen.ListTargetsByDonationIDRow, isStaff bool) []TargetResponse {
 	targetResponses := make([]TargetResponse, 0, len(targetsList))
+	hasHidden := false
 	for _, tl := range targetsList {
 		if !isStaff && tl.CategoryHidden {
+			hasHidden = true
 			continue
 		}
+		catID := tl.BeneficiaryCategoryID.String()
+		variant := string(tl.CategoryVariant)
 		targetResponses = append(targetResponses, TargetResponse{
-			BeneficiaryCategoryID: tl.BeneficiaryCategoryID.String(),
+			BeneficiaryCategoryID: &catID,
 			Name:                  tl.CategoryName,
-			Variant:               string(tl.CategoryVariant),
+			Variant:               &variant,
+		})
+	}
+	if !isStaff && hasHidden {
+		targetResponses = append(targetResponses, TargetResponse{
+			BeneficiaryCategoryID: nil,
+			Name:                  "Hidden institution",
+			Variant:               nil,
 		})
 	}
 	return targetResponses
@@ -495,7 +502,7 @@ func buildDonationStaffResponse(details dbgen.GetDonationDetailsByIDRow, foods [
 		HideSponsor:    details.HideSponsor,
 		CreatedAt:      details.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:      details.UpdatedAt.Format(time.RFC3339),
-		Sponsor:        BuildStaffSponsorResponse(details.SponsorID, details.SponsorName, details.SponsorLogo, details.SponsorHidden, details.SponsorHideDonations, details.SponsorEmail, details.SponsorPhone, details.SponsorAddress),
+		Sponsor:        BuildStaffSponsorResponse(details.SponsorID, details.SponsorName, details.SponsorLogo, details.SponsorHidden, details.SponsorHideDonations, details.SponsorDeletedAt.Valid, details.SponsorEmail, details.SponsorPhone, details.SponsorAddress),
 		CreatedBy:      createdByResp,
 		Foods:          foods,
 		Targets:        targets,
@@ -503,7 +510,7 @@ func buildDonationStaffResponse(details dbgen.GetDonationDetailsByIDRow, foods [
 }
 
 func buildDonationPublicResponse(details dbgen.GetDonationDetailsByIDRow, foods []FoodResponse, targets []TargetResponse) DonationPublicResponse {
-	isFull := details.Remain == 0 || details.Status == dbgen.DonationStatusClosed
+	isFull := details.HeroQuota > 0 && details.Remain == 0
 
 	return DonationPublicResponse{
 		ID:        details.ID.String(),
@@ -517,7 +524,7 @@ func buildDonationPublicResponse(details dbgen.GetDonationDetailsByIDRow, foods 
 		Status:    string(details.Status),
 		CreatedAt: details.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: details.UpdatedAt.Format(time.RFC3339),
-		Sponsor:   BuildPublicSponsorResponse(details.SponsorID, details.SponsorName, details.SponsorLogo, details.SponsorHidden || details.SponsorHideDonations, details.HideSponsor),
+		Sponsor:   BuildPublicSponsorResponse(details.SponsorID, details.SponsorName, details.SponsorLogo, details.SponsorHidden || details.SponsorHideDonations || details.SponsorDeletedAt.Valid, details.HideSponsor),
 		Foods:     foods,
 		Targets:   targets,
 	}
@@ -570,40 +577,46 @@ func (h *DonationHandler) CreateDonationHandler(w http.ResponseWriter, r *http.R
 		targetUUIDs = append(targetUUIDs, u)
 	}
 
-	rows, err := h.pool.Query(r.Context(), "SELECT id, variant FROM beneficiary_categories WHERE id = ANY($1) AND deleted_at IS NULL", targetUUIDs)
-	if err != nil {
-		response.InternalServerError(w, r, err, "Failed to verify beneficiary categories")
-		return
-	}
-	defer rows.Close()
-
 	hasHeroVariant := false
 	foundCatCount := 0
-	for rows.Next() {
-		var id uuid.UUID
-		var variant string
-		if err := rows.Scan(&id, &variant); err != nil {
-			response.InternalServerError(w, r, err, "Failed to scan beneficiary categories")
+	if len(targetUUIDs) > 0 {
+		rows, err := h.pool.Query(r.Context(), "SELECT id, variant FROM beneficiary_categories WHERE id = ANY($1) AND deleted_at IS NULL", targetUUIDs)
+		if err != nil {
+			response.InternalServerError(w, r, err, "Failed to verify beneficiary categories")
 			return
 		}
-		foundCatCount++
-		if variant == "university" || variant == "kipk" {
-			hasHeroVariant = true
+		defer rows.Close()
+
+		for rows.Next() {
+			var id uuid.UUID
+			var variant string
+			if err := rows.Scan(&id, &variant); err != nil {
+				response.InternalServerError(w, r, err, "Failed to scan beneficiary categories")
+				return
+			}
+			foundCatCount++
+			if variant == "university" || variant == "kipk" {
+				hasHeroVariant = true
+			}
 		}
-	}
+		if err := rows.Err(); err != nil {
+			response.InternalServerError(w, r, err, "Failed to iterate beneficiary categories")
+			return
+		}
 
-	if foundCatCount != len(targetUUIDs) {
-		response.BadRequest(w, r, "VAL_002", "Validation failed", map[string]string{
-			"beneficiary_category_ids": "One or more referenced beneficiary categories do not exist or have been deleted",
-		})
-		return
-	}
+		if foundCatCount != len(targetUUIDs) {
+			response.BadRequest(w, r, "VAL_002", "Validation failed", map[string]string{
+				"beneficiary_category_ids": "One or more referenced beneficiary categories do not exist or have been deleted",
+			})
+			return
+		}
 
-	if len(targetUUIDs) > 0 && !hasHeroVariant && heroQuota > 0 {
-		response.BadRequest(w, r, "VAL_001", "Validation failed", map[string]string{
-			"hero_quota": "Hero quota must be 0 when only organization categories are targeted",
-		})
-		return
+		if !hasHeroVariant && heroQuota > 0 {
+			response.BadRequest(w, r, "VAL_001", "Validation failed", map[string]string{
+				"hero_quota": "Hero quota must be 0 when only organization categories are targeted",
+			})
+			return
+		}
 	}
 
 	tx, err := h.pool.Begin(r.Context())
@@ -834,11 +847,28 @@ func (h *DonationHandler) UpdateDonationHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	finalEventAt := current.EventAt
+	if eventTime != nil {
+		finalEventAt = *eventTime
+	}
+
+	if eventTime != nil && current.Status == dbgen.DonationStatusOpen && !finalEventAt.After(time.Now()) {
+		response.BadRequest(w, r, "VAL_001", "Validation failed", map[string]string{
+			"event_at": "Distribution event cannot be in the past for an open donation",
+		})
+		return
+	}
+
+	heroQuotaChanged := req.HeroQuota != nil && finalHeroQuota != current.HeroQuota
 	finalStatus := current.Status
-	if current.Status == dbgen.DonationStatusOpen && finalRemain == 0 {
-		finalStatus = dbgen.DonationStatusClosed
-	} else if current.Status == dbgen.DonationStatusClosed && finalRemain > 0 {
-		finalStatus = dbgen.DonationStatusOpen
+	if heroQuotaChanged {
+		if current.Status == dbgen.DonationStatusOpen && finalRemain == 0 {
+			finalStatus = dbgen.DonationStatusClosed
+		} else if current.Status == dbgen.DonationStatusClosed && finalRemain > 0 {
+			if finalEventAt.After(time.Now()) {
+				finalStatus = dbgen.DonationStatusOpen
+			}
+		}
 	}
 
 	finalSponsorID := current.SponsorID
@@ -852,11 +882,6 @@ func (h *DonationHandler) UpdateDonationHandler(w http.ResponseWriter, r *http.R
 			return
 		}
 		finalSponsorID = *sponsorUUID
-	}
-
-	finalEventAt := current.EventAt
-	if eventTime != nil {
-		finalEventAt = *eventTime
 	}
 
 	finalAddress := current.Address
@@ -894,40 +919,46 @@ func (h *DonationHandler) UpdateDonationHandler(w http.ResponseWriter, r *http.R
 			targetUUIDs = append(targetUUIDs, u)
 		}
 
-		rows, err := tx.Query(r.Context(), "SELECT id, variant FROM beneficiary_categories WHERE id = ANY($1) AND deleted_at IS NULL", targetUUIDs)
-		if err != nil {
-			response.InternalServerError(w, r, err, "Failed to verify beneficiary categories")
-			return
-		}
-		defer rows.Close()
-
 		hasHeroVariant := false
 		foundCatCount := 0
-		for rows.Next() {
-			var id uuid.UUID
-			var variant string
-			if err := rows.Scan(&id, &variant); err != nil {
-				response.InternalServerError(w, r, err, "Failed to scan beneficiary categories")
+		if len(targetUUIDs) > 0 {
+			rows, err := tx.Query(r.Context(), "SELECT id, variant FROM beneficiary_categories WHERE id = ANY($1) AND deleted_at IS NULL", targetUUIDs)
+			if err != nil {
+				response.InternalServerError(w, r, err, "Failed to verify beneficiary categories")
 				return
 			}
-			foundCatCount++
-			if variant == "university" || variant == "kipk" {
-				hasHeroVariant = true
+			defer rows.Close()
+
+			for rows.Next() {
+				var id uuid.UUID
+				var variant string
+				if err := rows.Scan(&id, &variant); err != nil {
+					response.InternalServerError(w, r, err, "Failed to scan beneficiary categories")
+					return
+				}
+				foundCatCount++
+				if variant == "university" || variant == "kipk" {
+					hasHeroVariant = true
+				}
 			}
-		}
+			if err := rows.Err(); err != nil {
+				response.InternalServerError(w, r, err, "Failed to iterate beneficiary categories")
+				return
+			}
 
-		if foundCatCount != len(targetUUIDs) {
-			response.BadRequest(w, r, "VAL_002", "Validation failed", map[string]string{
-				"beneficiary_category_ids": "One or more referenced beneficiary categories do not exist or have been deleted",
-			})
-			return
-		}
+			if foundCatCount != len(targetUUIDs) {
+				response.BadRequest(w, r, "VAL_002", "Validation failed", map[string]string{
+					"beneficiary_category_ids": "One or more referenced beneficiary categories do not exist or have been deleted",
+				})
+				return
+			}
 
-		if len(targetUUIDs) > 0 && !hasHeroVariant && finalHeroQuota > 0 {
-			response.BadRequest(w, r, "VAL_001", "Validation failed", map[string]string{
-				"hero_quota": "Hero quota must be 0 when only organization categories are targeted",
-			})
-			return
+			if !hasHeroVariant && finalHeroQuota > 0 {
+				response.BadRequest(w, r, "VAL_001", "Validation failed", map[string]string{
+					"hero_quota": "Hero quota must be 0 when only organization categories are targeted",
+				})
+				return
+			}
 		}
 
 		if err := txQueries.DeleteTargetsByDonationID(r.Context(), donationUUID); err != nil {
@@ -1085,6 +1116,25 @@ func (h *DonationHandler) PublishDonationHandler(w http.ResponseWriter, r *http.
 	if donation.Status != dbgen.DonationStatusDraft {
 		response.BadRequest(w, r, "VAL_001", "Only draft donations can be published", map[string]string{
 			"status": fmt.Sprintf("Current status is %s", donation.Status),
+		})
+		return
+	}
+
+	var sponsorDeletedAt pgtype.Timestamptz
+	err = tx.QueryRow(r.Context(), "SELECT deleted_at FROM sponsors WHERE id = $1", donation.SponsorID).Scan(&sponsorDeletedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			response.BadRequest(w, r, "VAL_002", "Sponsor has been deleted", map[string]string{
+				"sponsor_id": "Sponsor has been deleted",
+			})
+			return
+		}
+		response.InternalServerError(w, r, err, "Failed to verify sponsor")
+		return
+	}
+	if sponsorDeletedAt.Valid {
+		response.BadRequest(w, r, "VAL_002", "Sponsor has been deleted", map[string]string{
+			"sponsor_id": "Sponsor has been deleted",
 		})
 		return
 	}
@@ -1474,11 +1524,21 @@ func (h *DonationHandler) ListDonationsHandler(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	limit := 10
+	defaultLimit := 20
+	maxLimit := 100
+	if h.cfg != nil {
+		if h.cfg.AppConfig.DefaultLimit > 0 {
+			defaultLimit = h.cfg.AppConfig.DefaultLimit
+		}
+		if h.cfg.AppConfig.MaxLimit > 0 {
+			maxLimit = h.cfg.AppConfig.MaxLimit
+		}
+	}
+	limit := defaultLimit
 	if l := query.Get("limit"); l != "" {
 		if lVal, err := strconv.Atoi(l); err == nil && lVal > 0 {
-			if lVal > 50 {
-				limit = 50
+			if lVal > maxLimit {
+				limit = maxLimit
 			} else {
 				limit = lVal
 			}
@@ -1511,7 +1571,7 @@ func (h *DonationHandler) ListDonationsHandler(w http.ResponseWriter, r *http.Re
 
 		var searchParam pgtype.Text
 		if s := strings.TrimSpace(query.Get("search")); s != "" {
-			searchParam = pgtype.Text{String: s, Valid: true}
+			searchParam = pgtype.Text{String: EscapeLikePattern(s), Valid: true}
 		}
 
 		total, err := h.queries.CountDonationsStaff(r.Context(), dbgen.CountDonationsStaffParams{
@@ -1564,10 +1624,12 @@ func (h *DonationHandler) ListDonationsHandler(w http.ResponseWriter, r *http.Re
 				return
 			}
 			for _, t := range allTargets {
+				catID := t.BeneficiaryCategoryID.String()
+				variant := string(t.CategoryVariant)
 				targetsMap[t.DonationID] = append(targetsMap[t.DonationID], TargetResponse{
-					BeneficiaryCategoryID: t.BeneficiaryCategoryID.String(),
+					BeneficiaryCategoryID: &catID,
 					Name:                  t.CategoryName,
-					Variant:               string(t.CategoryVariant),
+					Variant:               &variant,
 				})
 			}
 		}
@@ -1610,7 +1672,7 @@ func (h *DonationHandler) ListDonationsHandler(w http.ResponseWriter, r *http.Re
 				HideSponsor:    d.HideSponsor,
 				CreatedAt:      d.CreatedAt.Format(time.RFC3339),
 				UpdatedAt:      d.UpdatedAt.Format(time.RFC3339),
-				Sponsor:        BuildStaffSponsorResponse(d.SponsorID, d.SponsorName, d.SponsorLogo, d.SponsorHidden, d.SponsorHideDonations, d.SponsorEmail, d.SponsorPhone, d.SponsorAddress),
+				Sponsor:        BuildStaffSponsorResponse(d.SponsorID, d.SponsorName, d.SponsorLogo, d.SponsorHidden, d.SponsorHideDonations, d.SponsorDeletedAt.Valid, d.SponsorEmail, d.SponsorPhone, d.SponsorAddress),
 				CreatedBy:      createdByResp,
 				Foods:          fList,
 				Targets:        tList,
@@ -1766,16 +1828,28 @@ func (h *DonationHandler) ListDonationsHandler(w http.ResponseWriter, r *http.Re
 			response.InternalServerError(w, r, err, "Failed to batch retrieve donation target categories")
 			return
 		}
+		hasHiddenByDonation := make(map[uuid.UUID]bool)
 		for _, t := range allTargets {
-
 			if t.CategoryHidden {
+				hasHiddenByDonation[t.DonationID] = true
 				continue
 			}
+			catID := t.BeneficiaryCategoryID.String()
+			variant := string(t.CategoryVariant)
 			targetsMap[t.DonationID] = append(targetsMap[t.DonationID], TargetResponse{
-				BeneficiaryCategoryID: t.BeneficiaryCategoryID.String(),
+				BeneficiaryCategoryID: &catID,
 				Name:                  t.CategoryName,
-				Variant:               string(t.CategoryVariant),
+				Variant:               &variant,
 			})
+		}
+		for donID, hasHidden := range hasHiddenByDonation {
+			if hasHidden {
+				targetsMap[donID] = append(targetsMap[donID], TargetResponse{
+					BeneficiaryCategoryID: nil,
+					Name:                  "Hidden institution",
+					Variant:               nil,
+				})
+			}
 		}
 	}
 
@@ -1790,7 +1864,7 @@ func (h *DonationHandler) ListDonationsHandler(w http.ResponseWriter, r *http.Re
 			tList = []TargetResponse{}
 		}
 
-		isFull := it.Remain == 0 || it.Status == dbgen.DonationStatusClosed
+		isFull := it.HeroQuota > 0 && it.Remain == 0
 
 		data = append(data, DonationPublicResponse{
 			ID:        it.ID.String(),

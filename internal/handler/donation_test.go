@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -224,7 +225,7 @@ func TestValidateCreateDonationRequest(t *testing.T) {
 		}
 	})
 
-	t.Run("Empty targets list rejected", func(t *testing.T) {
+	t.Run("Empty targets list allowed in creation (optional general food drive)", func(t *testing.T) {
 		req := CreateDonationRequest{
 			SponsorID:              validSponsorID,
 			EventAt:                validEventAt,
@@ -233,8 +234,8 @@ func TestValidateCreateDonationRequest(t *testing.T) {
 			BeneficiaryCategoryIDs: []string{},
 		}
 		_, _, _, _, _, _, errs := ValidateCreateDonationRequest(req)
-		if errs["beneficiary_category_ids"] != "At least one beneficiary category is required" {
-			t.Errorf("expected 'At least one beneficiary category is required', got %s", errs["beneficiary_category_ids"])
+		if len(errs) != 0 {
+			t.Errorf("expected empty targets to be allowed, got errors %v", errs)
 		}
 	})
 
@@ -321,10 +322,13 @@ func TestBuildStaffSponsorResponse(t *testing.T) {
 	phonePg := pgtype.Text{String: "6281234567890", Valid: true}
 	addressPg := pgtype.Text{String: "Jl. Sudirman No. 1, Jakarta", Valid: true}
 
-	resp := BuildStaffSponsorResponse(sponsorID, "PT Indofood", logoPg, false, true, emailPg, phonePg, addressPg)
+	resp := BuildStaffSponsorResponse(sponsorID, "PT Indofood", logoPg, false, true, true, emailPg, phonePg, addressPg)
 
 	if resp.ID != sponsorID.String() {
 		t.Errorf("expected ID %s, got %s", sponsorID.String(), resp.ID)
+	}
+	if !resp.IsDeleted {
+		t.Errorf("expected is_deleted true, got %v", resp.IsDeleted)
 	}
 	if resp.Email == nil || *resp.Email != "corp@indofood.com" {
 		t.Errorf("expected email 'corp@indofood.com', got %v", resp.Email)
@@ -448,7 +452,7 @@ func TestCreateDonationHandler(t *testing.T) {
 		if len(donationResp.Foods) != 1 || donationResp.Foods[0].FoodItemID != foodItemID {
 			t.Errorf("expected attached food item %d, got %+v", foodItemID, donationResp.Foods)
 		}
-		if len(donationResp.Targets) != 1 || donationResp.Targets[0].BeneficiaryCategoryID != categoryID.String() {
+		if len(donationResp.Targets) != 1 || donationResp.Targets[0].BeneficiaryCategoryID == nil || *donationResp.Targets[0].BeneficiaryCategoryID != categoryID.String() {
 			t.Errorf("expected attached target category %s, got %+v", categoryID.String(), donationResp.Targets)
 		}
 	})
@@ -876,12 +880,15 @@ func TestGetDonationByIDHandler(t *testing.T) {
 		if donationPub.IsFull {
 			t.Error("expected is_full: false when remain > 0 and status is open")
 		}
-		// Category leak guardrail: only unhidden categories shown to public
-		if len(donationPub.Targets) != 1 {
-			t.Fatalf("expected exactly 1 non-hidden target category for public, got %d", len(donationPub.Targets))
+		// Category leak guardrail: unhidden categories shown with details, hidden categories collapsed into "Hidden institution"
+		if len(donationPub.Targets) != 2 {
+			t.Fatalf("expected 2 target categories for public (1 unhidden + 1 collapsed hidden institution), got %d", len(donationPub.Targets))
 		}
-		if donationPub.Targets[0].BeneficiaryCategoryID != unhiddenCatID.String() {
-			t.Errorf("expected category ID %s, got %s", unhiddenCatID.String(), donationPub.Targets[0].BeneficiaryCategoryID)
+		if donationPub.Targets[0].BeneficiaryCategoryID == nil || *donationPub.Targets[0].BeneficiaryCategoryID != unhiddenCatID.String() {
+			t.Errorf("expected category ID %s, got %v", unhiddenCatID.String(), donationPub.Targets[0].BeneficiaryCategoryID)
+		}
+		if donationPub.Targets[1].BeneficiaryCategoryID != nil || donationPub.Targets[1].Name != "Hidden institution" {
+			t.Errorf("expected masked Hidden institution, got %+v", donationPub.Targets[1])
 		}
 	})
 
@@ -1061,8 +1068,8 @@ func TestGetDonationByIDHandler(t *testing.T) {
 		var cDonationPub DonationPublicResponse
 		_ = json.Unmarshal(cDataBytes, &cDonationPub)
 
-		if !cDonationPub.IsFull {
-			t.Error("expected is_full: true when status == 'closed'")
+		if cDonationPub.IsFull {
+			t.Error("expected is_full: false for closed donation with spots remaining (remain = 5)")
 		}
 	})
 
@@ -1327,14 +1334,18 @@ func TestListDonationsHandler(t *testing.T) {
 			}
 			// Category shielding check
 			for _, tg := range d.Targets {
-				if tg.BeneficiaryCategoryID == hiddenCatID.String() {
+				if tg.BeneficiaryCategoryID != nil && *tg.BeneficiaryCategoryID == hiddenCatID.String() {
 					t.Errorf("public list leaked hidden category %s", hiddenCatID.String())
 				}
 			}
-			// Full badge check
-			if d.Status == "closed" || d.Remain == 0 {
+			// Full badge check: strictly hero_quota > 0 && remain == 0
+			if d.HeroQuota > 0 && d.Remain == 0 {
 				if !d.IsFull {
-					t.Errorf("expected is_full: true for donation %s (status: %s, remain: %d)", d.ID, d.Status, d.Remain)
+					t.Errorf("expected is_full: true for donation %s (hero_quota: %d, remain: %d)", d.ID, d.HeroQuota, d.Remain)
+				}
+			} else {
+				if d.IsFull {
+					t.Errorf("expected is_full: false for donation %s (hero_quota: %d, remain: %d)", d.ID, d.HeroQuota, d.Remain)
 				}
 			}
 		}
@@ -1508,11 +1519,11 @@ func TestValidateUpdateDonationRequest(t *testing.T) {
 		}
 	})
 
-	t.Run("Empty beneficiary category slice returns error", func(t *testing.T) {
+	t.Run("Empty beneficiary category slice allowed in update (clears targets)", func(t *testing.T) {
 		req := UpdateDonationRequest{BeneficiaryCategoryIDs: []string{}}
 		_, _, errs := ValidateUpdateDonationRequest(req)
-		if errs["beneficiary_category_ids"] != "At least one beneficiary category is required" {
-			t.Errorf("expected non-empty targets error, got %v", errs["beneficiary_category_ids"])
+		if _, ok := errs["beneficiary_category_ids"]; ok {
+			t.Errorf("expected empty targets to be allowed, got error %v", errs["beneficiary_category_ids"])
 		}
 	})
 
@@ -2403,6 +2414,925 @@ func TestDeleteDonationHandler(t *testing.T) {
 		h.DeleteDonationHandler(rec2, req2)
 		if rec2.Code != http.StatusNotFound {
 			t.Errorf("expected 404 on re-delete, got %d", rec2.Code)
+		}
+	})
+}
+
+
+func TestSoftDeletedSponsorMasking(t *testing.T) {
+	pool := getTestPool(t)
+	defer pool.Close()
+
+	cfg := config.LoadConfig()
+	h := NewDonationHandler(pool, &cfg)
+
+	defer func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM donations WHERE message LIKE 'SoftDeleteTest%'")
+		_, _ = pool.Exec(context.Background(), "DELETE FROM sponsors WHERE name LIKE 'SoftDelete Sponsor%'")
+		_, _ = pool.Exec(context.Background(), "DELETE FROM beneficiary_categories WHERE name LIKE 'SoftDelete Cat%'")
+		_, _ = pool.Exec(context.Background(), "DELETE FROM food_items WHERE name LIKE 'SoftDelete %'")
+	}()
+
+	catName := "SoftDelete Cat " + uuid.NewString()[:8]
+	var catID uuid.UUID
+	err := pool.QueryRow(context.Background(), "INSERT INTO beneficiary_categories (name, variant) VALUES ($1, 'other') RETURNING id", catName).Scan(&catID)
+	if err != nil {
+		t.Fatalf("failed to insert category: %v", err)
+	}
+
+	foodName := "SoftDelete Rice Box " + uuid.NewString()[:8]
+	var foodItemID int32
+	err = pool.QueryRow(context.Background(), "INSERT INTO food_items (name) VALUES ($1) RETURNING id", foodName).Scan(&foodItemID)
+	if err != nil {
+		t.Fatalf("failed to insert food item: %v", err)
+	}
+
+	sponsorName := "SoftDelete Sponsor " + uuid.NewString()[:8]
+	var sponsorID uuid.UUID
+	err = pool.QueryRow(context.Background(),
+		"INSERT INTO sponsors (name, variant, email, phone, address, hidden, hide_donations) VALUES ($1, 'company', 'soft@sponsor.org', '62811223344', 'Jl. Kaliurang', false, false) RETURNING id",
+		sponsorName,
+	).Scan(&sponsorID)
+	if err != nil {
+		t.Fatalf("failed to insert sponsor: %v", err)
+	}
+
+	var donationID uuid.UUID
+	msg := "SoftDeleteTest Event"
+	err = pool.QueryRow(context.Background(),
+		"INSERT INTO donations (sponsor_id, created_by, event_at, quota, hero_quota, remain, message, status, hide_from_public, hide_sponsor) VALUES ($1, '00000000-0000-0000-0000-000000000001', NOW() + INTERVAL '24 hours', 20, 10, 10, $2, 'open', false, false) RETURNING id",
+		sponsorID, msg,
+	).Scan(&donationID)
+	if err != nil {
+		t.Fatalf("failed to insert donation: %v", err)
+	}
+
+	_, _ = pool.Exec(context.Background(), "INSERT INTO foods (donation_id, food_item_id, quantity, unit) VALUES ($1, $2, 5, 'portion')", donationID, foodItemID)
+	_, _ = pool.Exec(context.Background(), "INSERT INTO donation_target (donation_id, beneficiary_category_id) VALUES ($1, $2)", donationID, catID)
+
+	// Before soft delete: Public detail sees real name
+	{
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/donations/"+donationID.String(), nil)
+		req.SetPathValue("id", donationID.String())
+		rec := httptest.NewRecorder()
+		h.GetDonationByIDHandler(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK before delete, got %d", rec.Code)
+		}
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		dataBytes, _ := json.Marshal(resp.Data)
+		var pubResp DonationPublicResponse
+		_ = json.Unmarshal(dataBytes, &pubResp)
+		if pubResp.Sponsor.Name != sponsorName {
+			t.Errorf("expected real sponsor name %s before soft delete, got %s", sponsorName, pubResp.Sponsor.Name)
+		}
+		if pubResp.Sponsor.ID == nil || *pubResp.Sponsor.ID != sponsorID.String() {
+			t.Errorf("expected sponsor ID %s before soft delete, got %v", sponsorID.String(), pubResp.Sponsor.ID)
+		}
+	}
+
+	// Soft-delete the sponsor
+	_, err = pool.Exec(context.Background(), "UPDATE sponsors SET deleted_at = NOW() WHERE id = $1", sponsorID)
+	if err != nil {
+		t.Fatalf("failed to soft-delete sponsor: %v", err)
+	}
+
+	// After soft delete: Public detail masks sponsor
+	{
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/donations/"+donationID.String(), nil)
+		req.SetPathValue("id", donationID.String())
+		rec := httptest.NewRecorder()
+		h.GetDonationByIDHandler(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK after delete, got %d", rec.Code)
+		}
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		dataBytes, _ := json.Marshal(resp.Data)
+		var pubResp DonationPublicResponse
+		_ = json.Unmarshal(dataBytes, &pubResp)
+		if pubResp.Sponsor.Name != "Generous sponsor" {
+			t.Errorf("expected masked sponsor name 'Generous sponsor' after soft delete, got %s", pubResp.Sponsor.Name)
+		}
+		if pubResp.Sponsor.ID != nil {
+			t.Errorf("expected nil sponsor ID after soft delete, got %v", pubResp.Sponsor.ID)
+		}
+		if pubResp.Sponsor.Logo != nil {
+			t.Errorf("expected nil sponsor logo after soft delete, got %v", pubResp.Sponsor.Logo)
+		}
+	}
+
+	// After soft delete: Public list masks sponsor
+	{
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/donations", nil)
+		rec := httptest.NewRecorder()
+		h.ListDonationsHandler(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for public list, got %d", rec.Code)
+		}
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		dataBytes, _ := json.Marshal(resp.Data)
+		var list []DonationPublicResponse
+		_ = json.Unmarshal(dataBytes, &list)
+		found := false
+		for _, item := range list {
+			if item.ID == donationID.String() {
+				found = true
+				if item.Sponsor.Name != "Generous sponsor" {
+					t.Errorf("expected masked sponsor in public list, got %s", item.Sponsor.Name)
+				}
+				if item.Sponsor.ID != nil {
+					t.Errorf("expected nil sponsor ID in public list, got %v", item.Sponsor.ID)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("donation %s not found in public list", donationID.String())
+		}
+	}
+
+	// After soft delete: Staff detail sees real name + is_deleted = true
+	{
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/donations/"+donationID.String(), nil)
+		req.SetPathValue("id", donationID.String())
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+		h.GetDonationByIDHandler(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for staff detail, got %d", rec.Code)
+		}
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		dataBytes, _ := json.Marshal(resp.Data)
+		var staffResp DonationStaffResponse
+		_ = json.Unmarshal(dataBytes, &staffResp)
+		if staffResp.Sponsor.Name != sponsorName {
+			t.Errorf("expected staff to see real sponsor name %s, got %s", sponsorName, staffResp.Sponsor.Name)
+		}
+		if !staffResp.Sponsor.IsDeleted {
+			t.Errorf("expected staff to see is_deleted = true, got %v", staffResp.Sponsor.IsDeleted)
+		}
+	}
+
+	// After soft delete: Staff list sees real name + is_deleted = true
+	{
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/donations/staff", nil)
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+		h.ListDonationsHandler(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for staff list, got %d", rec.Code)
+		}
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		dataBytes, _ := json.Marshal(resp.Data)
+		var list []DonationStaffResponse
+		_ = json.Unmarshal(dataBytes, &list)
+		found := false
+		for _, item := range list {
+			if item.ID == donationID.String() {
+				found = true
+				if item.Sponsor.Name != sponsorName {
+					t.Errorf("expected staff list to see real sponsor name %s, got %s", sponsorName, item.Sponsor.Name)
+				}
+				if !item.Sponsor.IsDeleted {
+					t.Errorf("expected staff list to see is_deleted = true, got %v", item.Sponsor.IsDeleted)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("donation %s not found in staff list", donationID.String())
+		}
+	}
+}
+
+func TestPhase2CorrectnessAndDomainStateMachine(t *testing.T) {
+	pool := getTestPool(t)
+	defer pool.Close()
+
+	cfg := config.LoadConfig()
+	h := NewDonationHandler(pool, &cfg)
+
+	defer func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM donations WHERE message LIKE 'Phase2Test%'")
+		_, _ = pool.Exec(context.Background(), "DELETE FROM sponsors WHERE name LIKE 'Phase2 Sponsor%'")
+		_, _ = pool.Exec(context.Background(), "DELETE FROM beneficiary_categories WHERE name LIKE 'Phase2 Cat%'")
+		_, _ = pool.Exec(context.Background(), "DELETE FROM food_items WHERE name LIKE 'Phase2 Food%'")
+	}()
+
+	foodName := "Phase2 Food " + uuid.NewString()[:8]
+	var foodItemID int32
+	err := pool.QueryRow(context.Background(), "INSERT INTO food_items (name) VALUES ($1) RETURNING id", foodName).Scan(&foodItemID)
+	if err != nil {
+		t.Fatalf("failed to insert food item: %v", err)
+	}
+
+	sponsorName := "Phase2 Sponsor " + uuid.NewString()[:8]
+	var sponsorID uuid.UUID
+	err = pool.QueryRow(context.Background(),
+		"INSERT INTO sponsors (name, variant, hidden, hide_donations) VALUES ($1, 'company', false, false) RETURNING id",
+		sponsorName,
+	).Scan(&sponsorID)
+	if err != nil {
+		t.Fatalf("failed to insert sponsor: %v", err)
+	}
+
+	var unhiddenCatID, hiddenCatID1, hiddenCatID2, orgCatID uuid.UUID
+	err = pool.QueryRow(context.Background(), "INSERT INTO beneficiary_categories (name, variant, hidden) VALUES ($1, 'university', false) RETURNING id", "Phase2 Cat Uni "+uuid.NewString()[:8]).Scan(&unhiddenCatID)
+	if err != nil {
+		t.Fatalf("failed to insert unhidden cat: %v", err)
+	}
+	err = pool.QueryRow(context.Background(), "INSERT INTO beneficiary_categories (name, variant, hidden) VALUES ($1, 'orphanage', true) RETURNING id", "Phase2 Cat Hidden 1 "+uuid.NewString()[:8]).Scan(&hiddenCatID1)
+	if err != nil {
+		t.Fatalf("failed to insert hidden cat 1: %v", err)
+	}
+	err = pool.QueryRow(context.Background(), "INSERT INTO beneficiary_categories (name, variant, hidden) VALUES ($1, 'nursing_home', true) RETURNING id", "Phase2 Cat Hidden 2 "+uuid.NewString()[:8]).Scan(&hiddenCatID2)
+	if err != nil {
+		t.Fatalf("failed to insert hidden cat 2: %v", err)
+	}
+	err = pool.QueryRow(context.Background(), "INSERT INTO beneficiary_categories (name, variant, hidden) VALUES ($1, 'shelter', false) RETURNING id", "Phase2 Cat Org "+uuid.NewString()[:8]).Scan(&orgCatID)
+	if err != nil {
+		t.Fatalf("failed to insert org cat: %v", err)
+	}
+
+	t.Run("B1 Fix: Org-only open donation remains open on unrelated PATCH", func(t *testing.T) {
+		var dID uuid.UUID
+		err := pool.QueryRow(context.Background(),
+			"INSERT INTO donations (sponsor_id, created_by, event_at, quota, hero_quota, remain, message, status, hide_from_public) VALUES ($1, '00000000-0000-0000-0000-000000000001', NOW() + INTERVAL '24 hours', 50, 0, 0, 'Phase2Test Org-Only Open', 'open', false) RETURNING id",
+			sponsorID,
+		).Scan(&dID)
+		if err != nil {
+			t.Fatalf("failed to insert donation: %v", err)
+		}
+		_, _ = pool.Exec(context.Background(), "INSERT INTO foods (donation_id, food_item_id, quantity, unit) VALUES ($1, $2, 10, 'portion')", dID, foodItemID)
+		_, _ = pool.Exec(context.Background(), "INSERT INTO donation_target (donation_id, beneficiary_category_id) VALUES ($1, $2)", dID, orgCatID)
+
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/donations/"+dID.String(), strings.NewReader(`{"message": "Phase2Test Updated Note"}`))
+		req.SetPathValue("id", dID.String())
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+
+		h.UpdateDonationHandler(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d. Body: %s", rec.Code, rec.Body.String())
+		}
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		dataBytes, _ := json.Marshal(resp.Data)
+		var staffResp DonationStaffResponse
+		_ = json.Unmarshal(dataBytes, &staffResp)
+
+		if staffResp.Status != "open" {
+			t.Errorf("B1 regression! Org-only donation flipped from open to '%s' on unrelated message edit", staffResp.Status)
+		}
+	})
+
+	t.Run("B1 Fix: Manually closed donation with spots remaining stays closed on message edit", func(t *testing.T) {
+		var dID uuid.UUID
+		err := pool.QueryRow(context.Background(),
+			"INSERT INTO donations (sponsor_id, created_by, event_at, quota, hero_quota, remain, message, status, hide_from_public) VALUES ($1, '00000000-0000-0000-0000-000000000001', NOW() + INTERVAL '24 hours', 50, 20, 10, 'Phase2Test Manually Closed', 'closed', false) RETURNING id",
+			sponsorID,
+		).Scan(&dID)
+		if err != nil {
+			t.Fatalf("failed to insert donation: %v", err)
+		}
+
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/donations/"+dID.String(), strings.NewReader(`{"message": "Phase2Test Closed Note Update"}`))
+		req.SetPathValue("id", dID.String())
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+
+		h.UpdateDonationHandler(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		dataBytes, _ := json.Marshal(resp.Data)
+		var staffResp DonationStaffResponse
+		_ = json.Unmarshal(dataBytes, &staffResp)
+
+		if staffResp.Status != "closed" {
+			t.Errorf("expected status to stay 'closed', got '%s'", staffResp.Status)
+		}
+	})
+
+	t.Run("B1 Fix: Auto-reopen does not reopen event with past event_at", func(t *testing.T) {
+		var dID uuid.UUID
+		err := pool.QueryRow(context.Background(),
+			"INSERT INTO donations (sponsor_id, created_by, event_at, quota, hero_quota, remain, message, status, hide_from_public) VALUES ($1, '00000000-0000-0000-0000-000000000001', NOW() - INTERVAL '2 hours', 50, 10, 0, 'Phase2Test Past Closed', 'closed', false) RETURNING id",
+			sponsorID,
+		).Scan(&dID)
+		if err != nil {
+			t.Fatalf("failed to insert donation: %v", err)
+		}
+
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/donations/"+dID.String(), strings.NewReader(`{"hero_quota": 15}`))
+		req.SetPathValue("id", dID.String())
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+
+		h.UpdateDonationHandler(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d. Body: %s", rec.Code, rec.Body.String())
+		}
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		dataBytes, _ := json.Marshal(resp.Data)
+		var staffResp DonationStaffResponse
+		_ = json.Unmarshal(dataBytes, &staffResp)
+
+		if staffResp.Status != "closed" {
+			t.Errorf("expected past event to remain 'closed' despite quota increase, got '%s'", staffResp.Status)
+		}
+		if staffResp.Remain != 5 {
+			t.Errorf("expected remain = 5, got %d", staffResp.Remain)
+		}
+	})
+
+	t.Run("B2 Fix: is_full strictly requires hero_quota > 0 && remain == 0", func(t *testing.T) {
+		var orgID uuid.UUID
+		err := pool.QueryRow(context.Background(),
+			"INSERT INTO donations (sponsor_id, created_by, event_at, quota, hero_quota, remain, message, status, hide_from_public) VALUES ($1, '00000000-0000-0000-0000-000000000001', NOW() + INTERVAL '24 hours', 50, 0, 0, 'Phase2Test Org-Only IsFull', 'open', false) RETURNING id",
+			sponsorID,
+		).Scan(&orgID)
+		if err != nil {
+			t.Fatalf("failed to insert org-only donation: %v", err)
+		}
+
+		pubReq := httptest.NewRequest(http.MethodGet, "/api/v1/donations/"+orgID.String(), nil)
+		pubReq.SetPathValue("id", orgID.String())
+		pubRec := httptest.NewRecorder()
+		h.GetDonationByIDHandler(pubRec, pubReq)
+		if pubRec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", pubRec.Code)
+		}
+		var pubResp1 response.Response
+		_ = json.Unmarshal(pubRec.Body.Bytes(), &pubResp1)
+		dataBytes1, _ := json.Marshal(pubResp1.Data)
+		var pubDonation1 DonationPublicResponse
+		_ = json.Unmarshal(dataBytes1, &pubDonation1)
+
+		if pubDonation1.IsFull {
+			t.Errorf("B2 regression! Org-only donation (hero_quota: 0) had is_full: true")
+		}
+
+		var fullID uuid.UUID
+		err = pool.QueryRow(context.Background(),
+			"INSERT INTO donations (sponsor_id, created_by, event_at, quota, hero_quota, remain, message, status, hide_from_public) VALUES ($1, '00000000-0000-0000-0000-000000000001', NOW() + INTERVAL '24 hours', 50, 10, 0, 'Phase2Test Full Hero', 'closed', false) RETURNING id",
+			sponsorID,
+		).Scan(&fullID)
+		if err != nil {
+			t.Fatalf("failed to insert full donation: %v", err)
+		}
+
+		pubReq2 := httptest.NewRequest(http.MethodGet, "/api/v1/donations/"+fullID.String(), nil)
+		pubReq2.SetPathValue("id", fullID.String())
+		pubRec2 := httptest.NewRecorder()
+		h.GetDonationByIDHandler(pubRec2, pubReq2)
+		if pubRec2.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", pubRec2.Code)
+		}
+		var pubResp2 response.Response
+		_ = json.Unmarshal(pubRec2.Body.Bytes(), &pubResp2)
+		dataBytes2, _ := json.Marshal(pubResp2.Data)
+		var pubDonation2 DonationPublicResponse
+		_ = json.Unmarshal(dataBytes2, &pubDonation2)
+
+		if !pubDonation2.IsFull {
+			t.Errorf("expected is_full: true for filled hero quota, got false")
+		}
+
+		var closedWithSpotsID uuid.UUID
+		err = pool.QueryRow(context.Background(),
+			"INSERT INTO donations (sponsor_id, created_by, event_at, quota, hero_quota, remain, message, status, hide_from_public) VALUES ($1, '00000000-0000-0000-0000-000000000001', NOW() + INTERVAL '24 hours', 50, 10, 5, 'Phase2Test Closed With Spots', 'closed', false) RETURNING id",
+			sponsorID,
+		).Scan(&closedWithSpotsID)
+		if err != nil {
+			t.Fatalf("failed to insert closed donation with spots: %v", err)
+		}
+
+		pubReq3 := httptest.NewRequest(http.MethodGet, "/api/v1/donations/"+closedWithSpotsID.String(), nil)
+		pubReq3.SetPathValue("id", closedWithSpotsID.String())
+		pubRec3 := httptest.NewRecorder()
+		h.GetDonationByIDHandler(pubRec3, pubReq3)
+		if pubRec3.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", pubRec3.Code)
+		}
+		var pubResp3 response.Response
+		_ = json.Unmarshal(pubRec3.Body.Bytes(), &pubResp3)
+		dataBytes3, _ := json.Marshal(pubResp3.Data)
+		var pubDonation3 DonationPublicResponse
+		_ = json.Unmarshal(dataBytes3, &pubDonation3)
+
+		if pubDonation3.IsFull {
+			t.Errorf("B2 regression! Manually closed donation with remain=5 had is_full: true")
+		}
+	})
+
+	t.Run("B3 / D1: Optional targets on create and update", func(t *testing.T) {
+		body := fmt.Sprintf(`{
+			"sponsor_id": "%s",
+			"event_at": "%s",
+			"quota": 30,
+			"hero_quota": 20,
+			"foods": [{"food_item_id": %d, "quantity": 10, "unit": "portion"}],
+			"beneficiary_category_ids": []
+		}`, sponsorID.String(), time.Now().Add(24*time.Hour).Format(time.RFC3339), foodItemID)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/donations", strings.NewReader(body))
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+
+		h.CreateDonationHandler(rec, req)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201 Created with empty targets, got %d. Body: %s", rec.Code, rec.Body.String())
+		}
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		dataBytes, _ := json.Marshal(resp.Data)
+		var created DonationStaffResponse
+		_ = json.Unmarshal(dataBytes, &created)
+
+		if len(created.Targets) != 0 {
+			t.Errorf("expected 0 targets on created general food drive, got %d", len(created.Targets))
+		}
+
+		body2 := fmt.Sprintf(`{"beneficiary_category_ids": ["%s"], "hero_quota": 0}`, orgCatID.String())
+		req2 := httptest.NewRequest(http.MethodPatch, "/api/v1/donations/"+created.ID, strings.NewReader(body2))
+		req2.SetPathValue("id", created.ID)
+		req2 = setStaffAuth(req2)
+		rec2 := httptest.NewRecorder()
+
+		h.UpdateDonationHandler(rec2, req2)
+		if rec2.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK adding target, got %d. Body: %s", rec2.Code, rec2.Body.String())
+		}
+
+		body3 := `{"beneficiary_category_ids": []}`
+		req3 := httptest.NewRequest(http.MethodPatch, "/api/v1/donations/"+created.ID, strings.NewReader(body3))
+		req3.SetPathValue("id", created.ID)
+		req3 = setStaffAuth(req3)
+		rec3 := httptest.NewRecorder()
+
+		h.UpdateDonationHandler(rec3, req3)
+		if rec3.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK clearing targets with empty slice, got %d. Body: %s", rec3.Code, rec3.Body.String())
+		}
+		var resp3 response.Response
+		_ = json.Unmarshal(rec3.Body.Bytes(), &resp3)
+		dataBytes3, _ := json.Marshal(resp3.Data)
+		var cleared DonationStaffResponse
+		_ = json.Unmarshal(dataBytes3, &cleared)
+
+		if len(cleared.Targets) != 0 {
+			t.Errorf("expected targets to be cleared to 0 items, got %d", len(cleared.Targets))
+		}
+	})
+
+	t.Run("B3 / Peer Review 4: Multiple hidden categories collapsed into single Hidden institution item", func(t *testing.T) {
+		var multiCatID uuid.UUID
+		err := pool.QueryRow(context.Background(),
+			"INSERT INTO donations (sponsor_id, created_by, event_at, quota, hero_quota, remain, message, status, hide_from_public) VALUES ($1, '00000000-0000-0000-0000-000000000001', NOW() + INTERVAL '24 hours', 50, 10, 10, 'Phase2Test Multi-Cat Hidden Collapse', 'open', false) RETURNING id",
+			sponsorID,
+		).Scan(&multiCatID)
+		if err != nil {
+			t.Fatalf("failed to insert multi-cat donation: %v", err)
+		}
+		_, _ = pool.Exec(context.Background(), "INSERT INTO foods (donation_id, food_item_id, quantity, unit) VALUES ($1, $2, 10, 'portion')", multiCatID, foodItemID)
+		_, _ = pool.Exec(context.Background(), "INSERT INTO donation_target (donation_id, beneficiary_category_id) VALUES ($1, $2), ($1, $3), ($1, $4)", multiCatID, unhiddenCatID, hiddenCatID1, hiddenCatID2)
+
+		staffReq := httptest.NewRequest(http.MethodGet, "/api/v1/donations/"+multiCatID.String(), nil)
+		staffReq.SetPathValue("id", multiCatID.String())
+		staffReq = setStaffAuth(staffReq)
+		staffRec := httptest.NewRecorder()
+		h.GetDonationByIDHandler(staffRec, staffReq)
+		if staffRec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for staff, got %d", staffRec.Code)
+		}
+		var staffResp response.Response
+		_ = json.Unmarshal(staffRec.Body.Bytes(), &staffResp)
+		staffData, _ := json.Marshal(staffResp.Data)
+		var staffDonation DonationStaffResponse
+		_ = json.Unmarshal(staffData, &staffDonation)
+		if len(staffDonation.Targets) != 3 {
+			t.Fatalf("expected staff to view all 3 targets, got %d", len(staffDonation.Targets))
+		}
+
+		pubReq := httptest.NewRequest(http.MethodGet, "/api/v1/donations/"+multiCatID.String(), nil)
+		pubReq.SetPathValue("id", multiCatID.String())
+		pubRec := httptest.NewRecorder()
+		h.GetDonationByIDHandler(pubRec, pubReq)
+		if pubRec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for public, got %d", pubRec.Code)
+		}
+		var pubResp response.Response
+		_ = json.Unmarshal(pubRec.Body.Bytes(), &pubResp)
+		pubData, _ := json.Marshal(pubResp.Data)
+		var pubDonation DonationPublicResponse
+		_ = json.Unmarshal(pubData, &pubDonation)
+
+		if len(pubDonation.Targets) != 2 {
+			t.Fatalf("expected public to view exactly 2 targets (1 unhidden + 1 collapsed Hidden institution), got %d: %+v", len(pubDonation.Targets), pubDonation.Targets)
+		}
+
+		if pubDonation.Targets[0].BeneficiaryCategoryID == nil || *pubDonation.Targets[0].BeneficiaryCategoryID != unhiddenCatID.String() {
+			t.Errorf("expected first target to be unhidden category ID %s, got %v", unhiddenCatID.String(), pubDonation.Targets[0].BeneficiaryCategoryID)
+		}
+		if pubDonation.Targets[1].BeneficiaryCategoryID != nil {
+			t.Errorf("expected collapsed hidden target to have null beneficiary_category_id, got %v", *pubDonation.Targets[1].BeneficiaryCategoryID)
+		}
+		if pubDonation.Targets[1].Name != "Hidden institution" {
+			t.Errorf("expected collapsed hidden target name 'Hidden institution', got '%s'", pubDonation.Targets[1].Name)
+		}
+		if pubDonation.Targets[1].Variant != nil {
+			t.Errorf("expected collapsed hidden target to have null variant, got %v", *pubDonation.Targets[1].Variant)
+		}
+
+		listReq := httptest.NewRequest(http.MethodGet, "/api/v1/donations", nil)
+		listRec := httptest.NewRecorder()
+		h.ListDonationsHandler(listRec, listReq)
+		if listRec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for public list, got %d", listRec.Code)
+		}
+		var listResp response.Response
+		_ = json.Unmarshal(listRec.Body.Bytes(), &listResp)
+		listData, _ := json.Marshal(listResp.Data)
+		var listItems []DonationPublicResponse
+		_ = json.Unmarshal(listData, &listItems)
+
+		found := false
+		for _, item := range listItems {
+			if item.ID == multiCatID.String() {
+				found = true
+				if len(item.Targets) != 2 {
+					t.Fatalf("expected 2 targets in public list for multi-cat donation, got %d: %+v", len(item.Targets), item.Targets)
+				}
+				if item.Targets[1].BeneficiaryCategoryID != nil || item.Targets[1].Name != "Hidden institution" {
+					t.Errorf("expected collapsed 'Hidden institution' in public list, got %+v", item.Targets[1])
+				}
+			}
+		}
+		if !found {
+			t.Errorf("multi-cat donation %s not found in public list", multiCatID.String())
+		}
+	})
+}
+
+func TestDonationDefensiveHygiene(t *testing.T) {
+	pool := getTestPool(t)
+	defer pool.Close()
+
+	cfg := config.LoadConfig()
+	h := NewDonationHandler(pool, &cfg)
+	ctx := context.Background()
+
+	// 1. Reject draft publication if sponsor is soft-deleted
+	t.Run("Reject publishing draft if sponsor has been soft-deleted", func(t *testing.T) {
+		var sponsorID uuid.UUID
+		err := pool.QueryRow(ctx, `
+			INSERT INTO sponsors (name, email, phone, variant)
+			VALUES ('Publish Deleted Sponsor', 'pubdel@example.com', '081234567891', 'individual')
+			RETURNING id;
+		`).Scan(&sponsorID)
+		if err != nil {
+			t.Fatalf("failed to insert sponsor: %v", err)
+		}
+		defer func() {
+			_, _ = pool.Exec(ctx, "DELETE FROM donations WHERE sponsor_id = $1", sponsorID)
+			_, _ = pool.Exec(ctx, "DELETE FROM sponsors WHERE id = $1", sponsorID)
+		}()
+
+		// Create draft donation
+		var donationID uuid.UUID
+		futureTime := time.Now().Add(48 * time.Hour)
+		err = pool.QueryRow(ctx, `
+			INSERT INTO donations (
+				sponsor_id, event_at, quota, hero_quota, remain,
+				address, message, status, hide_from_public, hide_sponsor
+			) VALUES (
+				$1, $2, 100, 50, 50,
+				'Draft Address', 'Draft Message', 'draft', FALSE, FALSE
+			) RETURNING id;
+		`, sponsorID, futureTime).Scan(&donationID)
+		if err != nil {
+			t.Fatalf("failed to create draft donation: %v", err)
+		}
+
+		var foodItemID int32
+		err = pool.QueryRow(ctx, "SELECT id FROM food_items LIMIT 1").Scan(&foodItemID)
+		if err != nil {
+			err = pool.QueryRow(ctx, "INSERT INTO food_items (name) VALUES ('Test Food Item') RETURNING id").Scan(&foodItemID)
+			if err != nil {
+				t.Fatalf("failed to get/insert food item: %v", err)
+			}
+		}
+
+		// Add required food item so only sponsor check blocks publication
+		_, err = pool.Exec(ctx, `
+			INSERT INTO foods (donation_id, food_item_id, quantity, unit)
+			VALUES ($1, $2, 10.0, 'portion');
+		`, donationID, foodItemID)
+		if err != nil {
+			t.Fatalf("failed to insert food item: %v", err)
+		}
+
+		// Soft-delete the sponsor
+		_, err = pool.Exec(ctx, `UPDATE sponsors SET deleted_at = NOW() WHERE id = $1`, sponsorID)
+		if err != nil {
+			t.Fatalf("failed to soft delete sponsor: %v", err)
+		}
+
+		// Try to publish
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/donations/"+donationID.String()+"/publish", nil)
+		req.SetPathValue("id", donationID.String())
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+
+		h.PublishDonationHandler(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 Bad Request, got %d: %s", rec.Code, rec.Body.String())
+		}
+
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp["code"] != "VAL_002" {
+			t.Errorf("expected error code VAL_002, got %v", resp["code"])
+		}
+		if resp["message"] != "Sponsor has been deleted" {
+			t.Errorf("expected message 'Sponsor has been deleted', got %v", resp["message"])
+		}
+	})
+
+	// 2. Reject past event_at on open donation
+	t.Run("Reject updating event_at to the past on an open donation", func(t *testing.T) {
+		var sponsorID uuid.UUID
+		err := pool.QueryRow(ctx, `
+			INSERT INTO sponsors (name, email, phone, variant)
+			VALUES ('Past Event Sponsor', 'pastevent@example.com', '081234567892', 'individual')
+			RETURNING id;
+		`).Scan(&sponsorID)
+		if err != nil {
+			t.Fatalf("failed to insert sponsor: %v", err)
+		}
+		defer func() {
+			_, _ = pool.Exec(ctx, "DELETE FROM donations WHERE sponsor_id = $1", sponsorID)
+			_, _ = pool.Exec(ctx, "DELETE FROM sponsors WHERE id = $1", sponsorID)
+		}()
+
+		var donationID uuid.UUID
+		futureTime := time.Now().Add(24 * time.Hour)
+		err = pool.QueryRow(ctx, `
+			INSERT INTO donations (
+				sponsor_id, event_at, quota, hero_quota, remain,
+				address, message, status, hide_from_public, hide_sponsor
+			) VALUES (
+				$1, $2, 50, 20, 20,
+				'Active Address', 'Active Message', 'open', FALSE, FALSE
+			) RETURNING id;
+		`, sponsorID, futureTime).Scan(&donationID)
+		if err != nil {
+			t.Fatalf("failed to create open donation: %v", err)
+		}
+
+		// Try to update event_at to past
+		pastTimeStr := time.Now().Add(-2 * time.Hour).Format(time.RFC3339)
+		patchBody := map[string]any{
+			"event_at": pastTimeStr,
+		}
+		bodyBytes, _ := json.Marshal(patchBody)
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/donations/"+donationID.String(), bytes.NewReader(bodyBytes))
+		req.SetPathValue("id", donationID.String())
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+
+		h.UpdateDonationHandler(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 Bad Request, got %d", rec.Code)
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		errs, ok := resp["errors"].(map[string]any)
+		if !ok || errs["event_at"] != "Distribution event cannot be in the past for an open donation" {
+			t.Errorf("expected error 'Distribution event cannot be in the past for an open donation', got: %+v", resp)
+		}
+
+		// Update to future time succeeds
+		newFutureStr := time.Now().Add(72 * time.Hour).Format(time.RFC3339)
+		validBody := map[string]any{
+			"event_at": newFutureStr,
+		}
+		validBytes, _ := json.Marshal(validBody)
+		req2 := httptest.NewRequest(http.MethodPatch, "/api/v1/donations/"+donationID.String(), bytes.NewReader(validBytes))
+		req2.SetPathValue("id", donationID.String())
+		req2 = setStaffAuth(req2)
+		rec2 := httptest.NewRecorder()
+
+		h.UpdateDonationHandler(rec2, req2)
+		if rec2.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d: %s", rec2.Code, rec2.Body.String())
+		}
+	})
+
+	// 3. Search wildcard escaping in donations staff list
+	t.Run("Literal % and _ in donation staff search are escaped", func(t *testing.T) {
+		var sponsorID uuid.UUID
+		err := pool.QueryRow(ctx, `
+			INSERT INTO sponsors (name, email, phone, variant)
+			VALUES ('Wildcard Donation Sponsor', 'wildcard_don@example.com', '081234567893', 'company')
+			RETURNING id;
+		`).Scan(&sponsorID)
+		if err != nil {
+			t.Fatalf("failed to insert sponsor: %v", err)
+		}
+		defer func() {
+			_, _ = pool.Exec(ctx, "DELETE FROM donations WHERE sponsor_id = $1", sponsorID)
+			_, _ = pool.Exec(ctx, "DELETE FROM sponsors WHERE id = $1", sponsorID)
+		}()
+
+		future := time.Now().Add(24 * time.Hour)
+		_, err = pool.Exec(ctx, `
+			INSERT INTO donations (sponsor_id, event_at, quota, hero_quota, remain, address, status, hide_from_public, hide_sponsor)
+			VALUES
+				($1, $2, 10, 5, 5, 'Jalan Solo % KM 5', 'open', FALSE, FALSE),
+				($1, $2, 10, 5, 5, 'Jalan Solo 100 KM 5', 'open', FALSE, FALSE),
+				($1, $2, 10, 5, 5, 'Jalan Kaliurang a_b', 'open', FALSE, FALSE),
+				($1, $2, 10, 5, 5, 'Jalan Kaliurang axb', 'open', FALSE, FALSE);
+		`, sponsorID, future)
+		if err != nil {
+			t.Fatalf("failed to insert wildcard test donations: %v", err)
+		}
+
+		// Search literal %
+		searchURL := "/api/v1/donations?search=" + url.QueryEscape("Solo %")
+		req := httptest.NewRequest(http.MethodGet, searchURL, nil)
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+		h.ListDonationsHandler(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		dataBytes, _ := json.Marshal(resp.Data)
+		var list []DonationStaffResponse
+		_ = json.Unmarshal(dataBytes, &list)
+
+		if len(list) != 1 || *list[0].Address != "Jalan Solo % KM 5" {
+			t.Errorf("expected 1 donation matching literal %%, got %d", len(list))
+		}
+
+		// Search literal _
+		searchURL2 := "/api/v1/donations?search=" + url.QueryEscape("Kaliurang a_b")
+		req2 := httptest.NewRequest(http.MethodGet, searchURL2, nil)
+		req2 = setStaffAuth(req2)
+		rec2 := httptest.NewRecorder()
+		h.ListDonationsHandler(rec2, req2)
+
+		if rec2.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec2.Code)
+		}
+		var resp2 response.Response
+		_ = json.Unmarshal(rec2.Body.Bytes(), &resp2)
+		dataBytes2, _ := json.Marshal(resp2.Data)
+		var list2 []DonationStaffResponse
+		_ = json.Unmarshal(dataBytes2, &list2)
+
+		if len(list2) != 1 || *list2[0].Address != "Jalan Kaliurang a_b" {
+			t.Errorf("expected 1 donation matching literal _, got %d", len(list2))
+		}
+	})
+}
+
+func TestDonationPayloadParityAndPaginationBoundaries(t *testing.T) {
+	pool := getTestPool(t)
+	defer pool.Close()
+
+	cfg := config.LoadConfig()
+	h := NewDonationHandler(pool, &cfg)
+	ctx := context.Background()
+
+	t.Run("Payload parity between anonymous visitor and hero caller", func(t *testing.T) {
+		var sponsorID uuid.UUID
+		err := pool.QueryRow(ctx, `
+			INSERT INTO sponsors (name, email, phone, variant, hidden)
+			VALUES ('Parity Sponsor', 'parity@example.com', '081234567899', 'company', true)
+			RETURNING id;
+		`).Scan(&sponsorID)
+		if err != nil {
+			t.Fatalf("failed to insert sponsor: %v", err)
+		}
+		defer func() {
+			_, _ = pool.Exec(ctx, "DELETE FROM donations WHERE sponsor_id = $1", sponsorID)
+			_, _ = pool.Exec(ctx, "DELETE FROM sponsors WHERE id = $1", sponsorID)
+		}()
+
+		var donationID uuid.UUID
+		futureTime := time.Now().Add(24 * time.Hour)
+		err = pool.QueryRow(ctx, `
+			INSERT INTO donations (
+				sponsor_id, event_at, quota, hero_quota, remain,
+				address, message, status, hide_from_public, hide_sponsor
+			) VALUES (
+				$1, $2, 40, 20, 20,
+				'Parity Address', 'Parity Message', 'open', FALSE, FALSE
+			) RETURNING id;
+		`, sponsorID, futureTime).Scan(&donationID)
+		if err != nil {
+			t.Fatalf("failed to insert donation: %v", err)
+		}
+
+		// 1. Anonymous request
+		reqAnon := httptest.NewRequest(http.MethodGet, "/api/v1/donations/"+donationID.String(), nil)
+		reqAnon.SetPathValue("id", donationID.String())
+		recAnon := httptest.NewRecorder()
+		h.GetDonationByIDHandler(recAnon, reqAnon)
+		if recAnon.Code != http.StatusOK {
+			t.Fatalf("expected 200 for anonymous, got %d", recAnon.Code)
+		}
+
+		// 2. Hero request
+		reqHero := httptest.NewRequest(http.MethodGet, "/api/v1/donations/"+donationID.String(), nil)
+		reqHero.SetPathValue("id", donationID.String())
+		reqHero = setHeroAuth(reqHero)
+		recHero := httptest.NewRecorder()
+		h.GetDonationByIDHandler(recHero, reqHero)
+		if recHero.Code != http.StatusOK {
+			t.Fatalf("expected 200 for hero, got %d", recHero.Code)
+		}
+
+		var respAnon, respHero map[string]any
+		_ = json.Unmarshal(recAnon.Body.Bytes(), &respAnon)
+		_ = json.Unmarshal(recHero.Body.Bytes(), &respHero)
+
+		dataAnon := respAnon["data"].(map[string]any)
+		dataHero := respHero["data"].(map[string]any)
+
+		if len(dataAnon) != len(dataHero) {
+			t.Errorf("expected key count parity, got anon=%d hero=%d", len(dataAnon), len(dataHero))
+		}
+		for k, vAnon := range dataAnon {
+			vHero, exists := dataHero[k]
+			if !exists {
+				t.Errorf("key %s missing in hero response", k)
+			}
+			if k == "sponsor" {
+				sAnon := vAnon.(map[string]any)
+				sHero := vHero.(map[string]any)
+				if sAnon["name"] != "Generous sponsor" || sHero["name"] != "Generous sponsor" {
+					t.Errorf("expected both to mask sponsor to 'Generous sponsor', got anon=%v hero=%v", sAnon["name"], sHero["name"])
+				}
+				if sAnon["id"] != nil || sHero["id"] != nil {
+					t.Errorf("expected both to have nil sponsor ID, got anon=%v hero=%v", sAnon["id"], sHero["id"])
+				}
+			}
+		}
+	})
+
+	t.Run("Pagination boundaries: page beyond last page returns empty array", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/donations?page=9999&limit=10", nil)
+		rec := httptest.NewRecorder()
+		h.ListDonationsHandler(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		dataBytes, _ := json.Marshal(resp.Data)
+		var list []DonationPublicResponse
+		_ = json.Unmarshal(dataBytes, &list)
+
+		if len(list) != 0 {
+			t.Errorf("expected empty array for page 9999, got %d items", len(list))
+		}
+		if resp.Meta == nil || resp.Meta.Page != 9999 {
+			t.Errorf("expected meta.page=9999, got %+v", resp.Meta)
+		}
+	})
+
+	t.Run("Pagination boundaries: limit above max is capped dynamically", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/donations?page=1&limit=500", nil)
+		rec := httptest.NewRecorder()
+		h.ListDonationsHandler(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+
+		if resp.Meta == nil || resp.Meta.Limit != cfg.AppConfig.MaxLimit {
+			t.Errorf("expected meta.limit to be capped at %d, got %+v", cfg.AppConfig.MaxLimit, resp.Meta)
 		}
 	})
 }

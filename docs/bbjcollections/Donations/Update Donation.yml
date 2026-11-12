@@ -34,7 +34,7 @@ http:
       //       "unit": kg, g, l, ml, portion, pack, piece
       //     }
       //   ]
-      //   "beneficiary_category_ids"?: [UUID]
+      //   "beneficiary_category_ids"?: [UUID] (optional, [] clears existing targets)
       // }
   auth: inherit
 
@@ -77,38 +77,14 @@ examples:
           //       "unit": kg, g, l, ml, portion, pack, piece
           //     }
           //   ]
-          //   "beneficiary_category_ids"?: [UUID]
+          //   "beneficiary_category_ids"?: [UUID] (optional, [] clears existing targets)
           // }
     response:
       status: 200
       statusText: OK
       headers:
-        - name: access-control-allow-headers
-          value: Content-Type, Authorization, X-Requested-With, Accept, Origin
-        - name: access-control-allow-methods
-          value: GET, POST, PUT, PATCH, DELETE, OPTIONS
-        - name: access-control-allow-origin
-          value: "*"
-        - name: access-control-expose-headers
-          value: Content-Length, Content-Type
-        - name: access-control-max-age
-          value: "86400"
         - name: content-type
           value: application/json; charset=utf-8
-        - name: referrer-policy
-          value: strict-origin-when-cross-origin
-        - name: x-content-type-options
-          value: nosniff
-        - name: x-frame-options
-          value: DENY
-        - name: x-request-id
-          value: ref_9df707ea
-        - name: x-xss-protection
-          value: 1; mode=block
-        - name: date
-          value: Thu, 12 Nov 2026 07:43:14 GMT
-        - name: content-length
-          value: "937"
       body:
         type: json
         data: |-
@@ -137,7 +113,8 @@ examples:
                 "hide_donations": false,
                 "email": "it@berbagibitesjogja.com",
                 "phone": "6200000000002",
-                "address": "Di Sleman"
+                "address": "Di Sleman",
+                "is_deleted": false
               },
               "created_by": {
                 "id": "00000000-0000-0000-0000-000000000001",

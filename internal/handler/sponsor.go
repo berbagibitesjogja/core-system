@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"net/http"
+	"net/mail"
 	"strconv"
 	"strings"
 	"time"
@@ -55,6 +56,13 @@ type UpdateSponsorRequest struct {
 	HideDonations *bool   `json:"hide_donations,omitempty"`
 }
 
+type PublicSponsorListItem struct {
+	ID      string  `json:"id"`
+	Name    string  `json:"name"`
+	Variant string  `json:"variant"`
+	Logo    *string `json:"logo"`
+}
+
 type SponsorResponse struct {
 	ID            string  `json:"id"`
 	Name          string  `json:"name"`
@@ -67,6 +75,21 @@ type SponsorResponse struct {
 	HideDonations bool    `json:"hide_donations"`
 	CreatedAt     string  `json:"created_at"`
 	UpdatedAt     string  `json:"updated_at"`
+}
+
+func toPublicSponsorListItem(s dbgen.Sponsor) PublicSponsorListItem {
+	variant := string(s.Variant)
+	var logo *string
+	if s.Logo.Valid {
+		str := uuid.UUID(s.Logo.Bytes).String()
+		logo = &str
+	}
+	return PublicSponsorListItem{
+		ID:      s.ID.String(),
+		Name:    s.Name,
+		Variant: variant,
+		Logo:    logo,
+	}
 }
 
 func toSponsorResponse(s dbgen.Sponsor) SponsorResponse {
@@ -110,7 +133,17 @@ func toSponsorResponse(s dbgen.Sponsor) SponsorResponse {
 
 func (h *SponsorHandler) ListSponsorsHandler(w http.ResponseWriter, r *http.Request) {
 	page := 1
-	limit := 10
+	defaultLimit := 20
+	maxLimit := 100
+	if h.cfg != nil {
+		if h.cfg.AppConfig.DefaultLimit > 0 {
+			defaultLimit = h.cfg.AppConfig.DefaultLimit
+		}
+		if h.cfg.AppConfig.MaxLimit > 0 {
+			maxLimit = h.cfg.AppConfig.MaxLimit
+		}
+	}
+	limit := defaultLimit
 
 	query := r.URL.Query()
 	if pageStr := query.Get("page"); pageStr != "" {
@@ -120,8 +153,8 @@ func (h *SponsorHandler) ListSponsorsHandler(w http.ResponseWriter, r *http.Requ
 	}
 	if limitStr := query.Get("limit"); limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			if l > 100 {
-				limit = 100
+			if l > maxLimit {
+				limit = maxLimit
 			} else {
 				limit = l
 			}
@@ -155,7 +188,7 @@ func (h *SponsorHandler) ListSponsorsHandler(w http.ResponseWriter, r *http.Requ
 
 	var searchParam pgtype.Text
 	if s := strings.TrimSpace(query.Get("search")); s != "" {
-		searchParam = pgtype.Text{String: s, Valid: true}
+		searchParam = pgtype.Text{String: EscapeLikePattern(s), Valid: true}
 	}
 
 	total, err := h.queries.CountSponsors(r.Context(), dbgen.CountSponsorsParams{
@@ -168,10 +201,10 @@ func (h *SponsorHandler) ListSponsorsHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	offset := int32((page - 1) * limit)
+	offset := (page - 1) * limit
 	sponsors, err := h.queries.ListSponsors(r.Context(), dbgen.ListSponsorsParams{
 		Limit:   int32(limit),
-		Offset:  offset,
+		Offset:  int32(offset),
 		Hidden:  hiddenParam,
 		Variant: variantParam,
 		Search:  searchParam,
@@ -181,12 +214,11 @@ func (h *SponsorHandler) ListSponsorsHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	data := make([]SponsorResponse, 0, len(sponsors))
-	for _, item := range sponsors {
-		data = append(data, toSponsorResponse(item))
+	totalPages := int(math.Ceil(float64(total) / float64(limit)))
+	if totalPages == 0 {
+		totalPages = 1
 	}
 
-	totalPages := int(math.Ceil(float64(total) / float64(limit)))
 	meta := response.ResponseMeta{
 		Page:       page,
 		Limit:      limit,
@@ -194,7 +226,20 @@ func (h *SponsorHandler) ListSponsorsHandler(w http.ResponseWriter, r *http.Requ
 		TotalPages: totalPages,
 	}
 
-	response.PaginatedSuccess(w, http.StatusOK, "Sponsors retrieved successfully", data, meta)
+	if isStaff {
+		res := make([]SponsorResponse, 0, len(sponsors))
+		for _, s := range sponsors {
+			res = append(res, toSponsorResponse(s))
+		}
+		response.PaginatedSuccess(w, http.StatusOK, "Sponsors retrieved successfully", res, meta)
+		return
+	}
+
+	pubRes := make([]PublicSponsorListItem, 0, len(sponsors))
+	for _, s := range sponsors {
+		pubRes = append(pubRes, toPublicSponsorListItem(s))
+	}
+	response.PaginatedSuccess(w, http.StatusOK, "Sponsors retrieved successfully", pubRes, meta)
 }
 
 func (h *SponsorHandler) GetSponsorByIDHandler(w http.ResponseWriter, r *http.Request) {
@@ -215,15 +260,20 @@ func (h *SponsorHandler) GetSponsorByIDHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if sponsor.Hidden {
-		claims, ok := middleware.GetClaims(r.Context())
-		if !ok || claims == nil || !claims.IsStaff {
-			response.NotFound(w, r, "Sponsor not found")
-			return
-		}
+	claims, hasClaims := middleware.GetClaims(r.Context())
+	isStaff := hasClaims && claims != nil && claims.IsStaff
+
+	if !isStaff && sponsor.Hidden {
+		response.NotFound(w, r, "Sponsor not found")
+		return
 	}
 
-	response.Success(w, http.StatusOK, "Sponsor retrieved successfully", toSponsorResponse(sponsor))
+	if isStaff {
+		response.Success(w, http.StatusOK, "Sponsor retrieved successfully", toSponsorResponse(sponsor))
+		return
+	}
+
+	response.Success(w, http.StatusOK, "Sponsor retrieved successfully", toPublicSponsorListItem(sponsor))
 }
 
 func (h *SponsorHandler) CreateSponsorHandler(w http.ResponseWriter, r *http.Request) {
@@ -233,9 +283,9 @@ func (h *SponsorHandler) CreateSponsorHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	req.Name = strings.TrimSpace(req.Name)
 	fieldErrors := make(map[string]string)
 
+	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
 		fieldErrors["name"] = "Sponsor name is required"
 	} else if len(req.Name) > 150 {
@@ -269,12 +319,13 @@ func (h *SponsorHandler) CreateSponsorHandler(w http.ResponseWriter, r *http.Req
 	if req.Email != nil {
 		email := strings.TrimSpace(strings.ToLower(*req.Email))
 		if email != "" {
-			if !strings.Contains(email, "@") {
+			parsed, err := mail.ParseAddress(email)
+			if err != nil || parsed.Address != email {
 				fieldErrors["email"] = "Invalid email format"
 			} else if len(email) > 255 {
 				fieldErrors["email"] = "Email cannot exceed 255 characters"
 			} else {
-				emailParam = pgtype.Text{String: email, Valid: true}
+				emailParam = pgtype.Text{String: parsed.Address, Valid: true}
 			}
 		}
 	}
@@ -290,12 +341,26 @@ func (h *SponsorHandler) CreateSponsorHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	var logoParam pgtype.UUID
+	var logoNotFound bool
+	var logoInvalid bool
 	if req.Logo != nil && strings.TrimSpace(*req.Logo) != "" {
 		parsedLogo, err := uuid.Parse(strings.TrimSpace(*req.Logo))
 		if err != nil {
 			fieldErrors["logo"] = "Invalid logo file ID format"
 		} else {
-			logoParam = pgtype.UUID{Bytes: parsedLogo, Valid: true}
+			var fileStatus, storageBucket, mimeType string
+			err = h.pool.QueryRow(r.Context(), "SELECT status, storage_bucket, mime_type FROM files WHERE id = $1", parsedLogo).Scan(&fileStatus, &storageBucket, &mimeType)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					logoNotFound = true
+				} else {
+					logoInvalid = true
+				}
+			} else if fileStatus != "uploaded" || storageBucket != "public" || !strings.HasPrefix(mimeType, "image/") {
+				logoInvalid = true
+			} else {
+				logoParam = pgtype.UUID{Bytes: parsedLogo, Valid: true}
+			}
 		}
 	}
 
@@ -303,7 +368,18 @@ func (h *SponsorHandler) CreateSponsorHandler(w http.ResponseWriter, r *http.Req
 		response.BadRequest(w, r, "VAL_001", "Validation failed", fieldErrors)
 		return
 	}
-
+	if logoNotFound {
+		response.BadRequest(w, r, "VAL_002", "Validation failed", map[string]string{
+			"logo": "Referenced logo file does not exist",
+		})
+		return
+	}
+	if logoInvalid {
+		response.BadRequest(w, r, "VAL_002", "Validation failed", map[string]string{
+			"logo": "File not found or not uploaded",
+		})
+		return
+	}
 	hidden := false
 	if req.Hidden != nil {
 		hidden = *req.Hidden
@@ -343,19 +419,28 @@ func (h *SponsorHandler) UpdateSponsorHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	existing, err := h.queries.GetSponsorByID(r.Context(), sponsorID)
+	var req UpdateSponsorRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.BadRequest(w, r, "VAL_001", "Invalid request body", nil)
+		return
+	}
+
+	tx, err := h.pool.Begin(r.Context())
+	if err != nil {
+		response.InternalServerError(w, r, err, "Failed to start database transaction")
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	txQueries := h.queries.WithTx(tx)
+
+	existing, err := txQueries.GetSponsorByIDForUpdate(r.Context(), sponsorID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			response.NotFound(w, r, "Sponsor not found")
 			return
 		}
 		response.InternalServerError(w, r, err, "Failed to retrieve sponsor")
-		return
-	}
-
-	var req UpdateSponsorRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, r, "VAL_001", "Invalid request body", nil)
 		return
 	}
 
@@ -402,12 +487,15 @@ func (h *SponsorHandler) UpdateSponsorHandler(w http.ResponseWriter, r *http.Req
 		e := strings.TrimSpace(strings.ToLower(*req.Email))
 		if e == "" {
 			email = pgtype.Text{Valid: false}
-		} else if !strings.Contains(e, "@") {
-			fieldErrors["email"] = "Invalid email format"
-		} else if len(e) > 255 {
-			fieldErrors["email"] = "Email cannot exceed 255 characters"
 		} else {
-			email = pgtype.Text{String: e, Valid: true}
+			parsed, err := mail.ParseAddress(e)
+			if err != nil || parsed.Address != e {
+				fieldErrors["email"] = "Invalid email format"
+			} else if len(e) > 255 {
+				fieldErrors["email"] = "Email cannot exceed 255 characters"
+			} else {
+				email = pgtype.Text{String: parsed.Address, Valid: true}
+			}
 		}
 	}
 
@@ -424,6 +512,8 @@ func (h *SponsorHandler) UpdateSponsorHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	logo := existing.Logo
+	var updateLogoNotFound bool
+	var updateLogoInvalid bool
 	if req.Logo != nil {
 		l := strings.TrimSpace(*req.Logo)
 		if l == "" {
@@ -433,7 +523,19 @@ func (h *SponsorHandler) UpdateSponsorHandler(w http.ResponseWriter, r *http.Req
 			if err != nil {
 				fieldErrors["logo"] = "Invalid logo file ID format"
 			} else {
-				logo = pgtype.UUID{Bytes: parsedLogo, Valid: true}
+				var fileStatus, storageBucket, mimeType string
+				err = tx.QueryRow(r.Context(), "SELECT status, storage_bucket, mime_type FROM files WHERE id = $1", parsedLogo).Scan(&fileStatus, &storageBucket, &mimeType)
+				if err != nil {
+					if errors.Is(err, pgx.ErrNoRows) {
+						updateLogoNotFound = true
+					} else {
+						updateLogoInvalid = true
+					}
+				} else if fileStatus != "uploaded" || storageBucket != "public" || !strings.HasPrefix(mimeType, "image/") {
+					updateLogoInvalid = true
+				} else {
+					logo = pgtype.UUID{Bytes: parsedLogo, Valid: true}
+				}
 			}
 		}
 	}
@@ -452,8 +554,19 @@ func (h *SponsorHandler) UpdateSponsorHandler(w http.ResponseWriter, r *http.Req
 		response.BadRequest(w, r, "VAL_001", "Validation failed", fieldErrors)
 		return
 	}
-
-	updated, err := h.queries.UpdateSponsor(r.Context(), dbgen.UpdateSponsorParams{
+	if updateLogoNotFound {
+		response.BadRequest(w, r, "VAL_002", "Validation failed", map[string]string{
+			"logo": "Referenced logo file does not exist",
+		})
+		return
+	}
+	if updateLogoInvalid {
+		response.BadRequest(w, r, "VAL_002", "Validation failed", map[string]string{
+			"logo": "File not found or not uploaded",
+		})
+		return
+	}
+	updated, err := txQueries.UpdateSponsor(r.Context(), dbgen.UpdateSponsorParams{
 		ID:            sponsorID,
 		Name:          name,
 		Variant:       variant,
@@ -469,6 +582,11 @@ func (h *SponsorHandler) UpdateSponsorHandler(w http.ResponseWriter, r *http.Req
 			return
 		}
 		response.InternalServerError(w, r, err, "Failed to update sponsor")
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		response.InternalServerError(w, r, err, "Failed to commit sponsor update transaction")
 		return
 	}
 
@@ -497,3 +615,4 @@ func (h *SponsorHandler) DeleteSponsorHandler(w http.ResponseWriter, r *http.Req
 		"id": row.ID.String(),
 	})
 }
+

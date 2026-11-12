@@ -31,32 +31,8 @@ examples:
       status: 200
       statusText: OK
       headers:
-        - name: access-control-allow-headers
-          value: Content-Type, Authorization, X-Requested-With, Accept, Origin
-        - name: access-control-allow-methods
-          value: GET, POST, PUT, PATCH, DELETE, OPTIONS
-        - name: access-control-allow-origin
-          value: "*"
-        - name: access-control-expose-headers
-          value: Content-Length, Content-Type
-        - name: access-control-max-age
-          value: "86400"
         - name: content-type
           value: application/json; charset=utf-8
-        - name: referrer-policy
-          value: strict-origin-when-cross-origin
-        - name: x-content-type-options
-          value: nosniff
-        - name: x-frame-options
-          value: DENY
-        - name: x-request-id
-          value: ref_7d0a6c65
-        - name: x-xss-protection
-          value: 1; mode=block
-        - name: date
-          value: Thu, 12 Nov 2026 07:45:11 GMT
-        - name: content-length
-          value: "939"
       body:
         type: json
         data: |-
@@ -85,7 +61,8 @@ examples:
                 "hide_donations": true,
                 "email": "it@berbagibitesjogja.com",
                 "phone": "620000000001",
-                "address": "Di Sini Senang"
+                "address": "Di Sini Senang",
+                "is_deleted": false
               },
               "created_by": {
                 "id": "00000000-0000-0000-0000-000000000001",
