@@ -128,3 +128,111 @@ func TestRequireHero(t *testing.T) {
 		}
 	})
 }
+
+func TestRequireOperationalStaff(t *testing.T) {
+	jwtSecret := "super-secure-jwt-secret-key-32-bytes!!"
+	userID := uuid.New()
+
+	// Hero
+	heroToken, _ := auth.SignAccessToken(userID, "hero@ugm.ac.id", false, "", 0, true, jwtSecret, 15*time.Minute)
+	// Non-operational staff: IT division (1) staff
+	itStaffToken, _ := auth.SignAccessToken(userID, "it.staff@bbj.com", true, "staff", 1, false, jwtSecret, 15*time.Minute)
+	// Non-operational staff: Managerial division (2) core
+	mgrCoreToken, _ := auth.SignAccessToken(userID, "mgr.core@bbj.com", true, "core", 2, false, jwtSecret, 15*time.Minute)
+	// Operational staff: Operational division (3) staff
+	opStaffToken, _ := auth.SignAccessToken(userID, "op.staff@bbj.com", true, "staff", 3, false, jwtSecret, 15*time.Minute)
+	// Operational staff: Operational division (3) core
+	opCoreToken, _ := auth.SignAccessToken(userID, "op.core@bbj.com", true, "core", 3, false, jwtSecret, 15*time.Minute)
+	// Super admin: role "super" (division 1 or any)
+	superToken, _ := auth.SignAccessToken(userID, "super@bbj.com", true, "super", 1, false, jwtSecret, 15*time.Minute)
+
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("operational-access-granted"))
+	})
+
+	stack := middleware.Authenticate(jwtSecret)(middleware.RequireOperationalStaff(3)(nextHandler))
+
+	t.Run("unauthenticated blocked with 401 Unauthorized", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/test", nil)
+		rec := httptest.NewRecorder()
+
+		stack.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 Unauthorized, got %d", rec.Code)
+		}
+	})
+
+	t.Run("hero blocked with 403 Forbidden", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/test", nil)
+		req.Header.Set("Authorization", "Bearer "+heroToken)
+		rec := httptest.NewRecorder()
+
+		stack.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 Forbidden, got %d", rec.Code)
+		}
+	})
+
+	t.Run("IT staff (division 1) blocked with 403 Forbidden", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/test", nil)
+		req.Header.Set("Authorization", "Bearer "+itStaffToken)
+		rec := httptest.NewRecorder()
+
+		stack.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 Forbidden, got %d", rec.Code)
+		}
+	})
+
+	t.Run("Managerial core (division 2) blocked with 403 Forbidden", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/test", nil)
+		req.Header.Set("Authorization", "Bearer "+mgrCoreToken)
+		rec := httptest.NewRecorder()
+
+		stack.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 Forbidden, got %d", rec.Code)
+		}
+	})
+
+	t.Run("Operational staff (division 3) succeeds (200 OK)", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/test", nil)
+		req.Header.Set("Authorization", "Bearer "+opStaffToken)
+		rec := httptest.NewRecorder()
+
+		stack.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+	})
+
+	t.Run("Operational core (division 3) succeeds (200 OK)", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/test", nil)
+		req.Header.Set("Authorization", "Bearer "+opCoreToken)
+		rec := httptest.NewRecorder()
+
+		stack.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+	})
+
+	t.Run("Super admin succeeds with universal bypass (200 OK)", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/test", nil)
+		req.Header.Set("Authorization", "Bearer "+superToken)
+		rec := httptest.NewRecorder()
+
+		stack.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+	})
+}

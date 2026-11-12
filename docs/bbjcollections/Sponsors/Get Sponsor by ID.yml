@@ -8,7 +8,7 @@ http:
   url: "{{base_url}}/sponsors/:id"
   params:
     - name: id
-      value: dbeed153-3ac5-46d2-90c3-83e9d5ac8318
+      value: 87acbb21-a5b2-4d99-8511-48cb43253df7
       type: path
   auth: inherit
 
@@ -25,7 +25,7 @@ examples:
       method: GET
       params:
         - name: id
-          value: dbeed153-3ac5-46d2-90c3-83e9d5ac8318
+          value: 87acbb21-a5b2-4d99-8511-48cb43253df7
           type: path
     response:
       status: 200
@@ -50,13 +50,13 @@ examples:
         - name: x-frame-options
           value: DENY
         - name: x-request-id
-          value: ref_1b9af1ee
+          value: ref_23efbd1c
         - name: x-xss-protection
           value: 1; mode=block
         - name: date
-          value: Fri, 06 Nov 2026 16:28:33 GMT
+          value: Thu, 12 Nov 2026 07:27:25 GMT
         - name: content-length
-          value: "347"
+          value: "370"
       body:
         type: json
         data: |-
@@ -64,14 +64,15 @@ examples:
             "status": "success",
             "message": "Sponsor retrieved successfully",
             "data": {
-              "id": "dbeed153-3ac5-46d2-90c3-83e9d5ac8318",
+              "id": "87acbb21-a5b2-4d99-8511-48cb43253df7",
               "name": "PT Berbagi Bites Jogja",
               "variant": "company",
               "address": "Di Sleman",
               "email": "it@berbagibitesjogja.com",
               "phone": "6200000000001",
               "hidden": false,
-              "created_at": "2026-11-06T23:27:53+07:00",
-              "updated_at": "2026-11-06T23:27:53+07:00"
+              "hide_donations": false,
+              "created_at": "2026-11-12T14:27:06+07:00",
+              "updated_at": "2026-11-12T14:27:06+07:00"
             }
           }

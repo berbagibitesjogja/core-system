@@ -17,6 +17,7 @@ type Config struct {
 	Log       LogConfig
 	SMTP      SMTPConfig
 	OAuth     OAuthConfig
+	Donation  DonationConfig
 }
 
 type DBConfig struct {
@@ -50,8 +51,9 @@ type AppConfig struct {
 	CORSMaxAge       string
 	DefaultLimit     int
 	MaxLimit         int
-	DefaultCurrency  string
-	FrontendURL      string
+	DefaultCurrency     string
+	FrontendURL         string
+	DivisionOperational int32
 }
 
 type StorageConfig struct {
@@ -95,6 +97,10 @@ func (o OAuthConfig) IsGoogleConfigured() bool {
 	return o.GoogleClientID != "" && o.GoogleClientSecret != ""
 }
 
+type DonationConfig struct {
+	AutoCompleteAfter time.Duration
+	PastDaysWindow    time.Duration
+}
 
 func (d DBConfig) DSN() string {
 	u := &url.URL{
@@ -133,8 +139,9 @@ func LoadConfig() Config {
 			CORSMaxAge:       getEnv("CORS_MAX_AGE_SECONDS", "86400"),
 			DefaultLimit:     getEnvAsInt("PAGINATION_DEFAULT_LIMIT", 20),
 			MaxLimit:         getEnvAsInt("PAGINATION_MAX_LIMIT", 100),
-			DefaultCurrency:  getEnv("DEFAULT_CURRENCY", "IDR"),
-			FrontendURL:      getEnvWithFallback([]string{"FRONTEND_URL", "APP_FRONTEND_URL"}, "http://localhost:8080"),
+			DefaultCurrency:     getEnv("DEFAULT_CURRENCY", "IDR"),
+			FrontendURL:         getEnvWithFallback([]string{"FRONTEND_URL", "APP_FRONTEND_URL"}, "http://localhost:8080"),
+			DivisionOperational: getEnvAsInt32WithFallback([]string{"DIVISION_OPERATIONAL", "DIVISION_OPERATIONAL_ID"}, 3),
 		},
 		DBConfig: DBConfig{
 			User:            getEnv("DB_USER", "postgres"),
@@ -183,6 +190,10 @@ func LoadConfig() Config {
 			GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
 			GoogleRedirectURL:  getEnv("GOOGLE_REDIRECT_URL", "http://localhost:8080/api/v1/auth/google/callback"),
 		},
+		Donation: DonationConfig{
+			AutoCompleteAfter: getEnvAsDuration("DONATION_AUTO_COMPLETE_AFTER", 2*time.Hour),
+			PastDaysWindow:    getEnvAsDuration("DONATION_PAST_DAYS_WINDOW", 72*time.Hour),
+		},
 	}
 }
 
@@ -221,6 +232,19 @@ func getEnvAsInt(key string, defaultVal int) int {
 		return defaultVal
 	}
 	return val
+}
+
+func getEnvAsInt32WithFallback(keys []string, defaultVal int32) int32 {
+	for _, key := range keys {
+		if valStr := os.Getenv(key); valStr != "" {
+			cleaned := cleanEnv(valStr)
+			val, err := strconv.ParseInt(cleaned, 10, 32)
+			if err == nil {
+				return int32(val)
+			}
+		}
+	}
+	return defaultVal
 }
 
 func getEnvAsInt32(key string, defaultVal int32) int32 {

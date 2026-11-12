@@ -385,4 +385,4 @@ INSERT INTO food_items (name) VALUES
     ('Zuppa Soup');
 
 -- +goose Down
-DELETE FROM food_items;
+TRUNCATE TABLE food_items CASCADE;

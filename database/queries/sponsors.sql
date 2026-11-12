@@ -6,14 +6,15 @@ INSERT INTO sponsors (
     email,
     phone,
     logo,
-    hidden
+    hidden,
+    hide_donations
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7
+    $1, $2, $3, $4, $5, $6, $7, $8
 )
-RETURNING id, name, variant, address, email, phone, logo, hidden, created_at, updated_at, deleted_at;
+RETURNING *;
 
 -- name: GetSponsorByID :one
-SELECT id, name, variant, address, email, phone, logo, hidden, created_at, updated_at, deleted_at
+SELECT *
 FROM sponsors
 WHERE id = $1 AND deleted_at IS NULL
 LIMIT 1;
@@ -28,9 +29,10 @@ SET
     phone = $6,
     logo = $7,
     hidden = $8,
+    hide_donations = $9,
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, name, variant, address, email, phone, logo, hidden, created_at, updated_at, deleted_at;
+RETURNING *;
 
 -- name: SoftDeleteSponsor :one
 UPDATE sponsors
@@ -41,7 +43,7 @@ WHERE id = $1 AND deleted_at IS NULL
 RETURNING id, deleted_at;
 
 -- name: ListSponsors :many
-SELECT id, name, variant, address, email, phone, logo, hidden, created_at, updated_at, deleted_at
+SELECT *
 FROM sponsors
 WHERE deleted_at IS NULL
   AND (sqlc.narg('hidden')::boolean IS NULL OR hidden = sqlc.narg('hidden'))
