@@ -39,6 +39,7 @@ SELECT
     s.logo AS sponsor_logo,
     s.hidden AS sponsor_hidden,
     s.hide_donations AS sponsor_hide_donations,
+    s.deleted_at AS sponsor_deleted_at,
     s.email AS sponsor_email,
     s.phone AS sponsor_phone,
     s.address AS sponsor_address,
@@ -92,6 +93,7 @@ SELECT
     s.logo AS sponsor_logo,
     s.hidden AS sponsor_hidden,
     s.hide_donations AS sponsor_hide_donations,
+    s.deleted_at AS sponsor_deleted_at,
     s.email AS sponsor_email,
     s.phone AS sponsor_phone,
     s.address AS sponsor_address,
@@ -101,7 +103,7 @@ JOIN sponsors s ON s.id = d.sponsor_id
 LEFT JOIN users u ON u.id = d.created_by
 WHERE d.deleted_at IS NULL
   AND (sqlc.narg('status')::donation_status IS NULL OR d.status = sqlc.narg('status'))
-  AND (sqlc.narg('search')::text IS NULL OR d.address ILIKE '%' || sqlc.narg('search') || '%' OR s.name ILIKE '%' || sqlc.narg('search') || '%')
+  AND (sqlc.narg('search')::text IS NULL OR d.address ILIKE '%' || sqlc.narg('search') || '%' ESCAPE '\' OR s.name ILIKE '%' || sqlc.narg('search') || '%' ESCAPE '\')
 ORDER BY d.event_at DESC
 LIMIT $1 OFFSET $2;
 
@@ -111,7 +113,7 @@ FROM donations d
 JOIN sponsors s ON s.id = d.sponsor_id
 WHERE d.deleted_at IS NULL
   AND (sqlc.narg('status')::donation_status IS NULL OR d.status = sqlc.narg('status'))
-  AND (sqlc.narg('search')::text IS NULL OR d.address ILIKE '%' || sqlc.narg('search') || '%' OR s.name ILIKE '%' || sqlc.narg('search') || '%');
+  AND (sqlc.narg('search')::text IS NULL OR d.address ILIKE '%' || sqlc.narg('search') || '%' ESCAPE '\' OR s.name ILIKE '%' || sqlc.narg('search') || '%' ESCAPE '\');
 
 -- name: ListDonationsPublicOpen :many
 SELECT
@@ -121,7 +123,7 @@ SELECT
     s.id AS sponsor_id,
     s.name AS sponsor_name,
     s.logo AS sponsor_logo,
-    (s.hidden OR s.hide_donations)::boolean AS sponsor_hidden
+    (s.hidden OR s.hide_donations OR s.deleted_at IS NOT NULL)::boolean AS sponsor_hidden
 FROM donations d
 JOIN sponsors s ON s.id = d.sponsor_id
 WHERE d.deleted_at IS NULL
@@ -145,7 +147,7 @@ SELECT
     s.id AS sponsor_id,
     s.name AS sponsor_name,
     s.logo AS sponsor_logo,
-    (s.hidden OR s.hide_donations)::boolean AS sponsor_hidden
+    (s.hidden OR s.hide_donations OR s.deleted_at IS NOT NULL)::boolean AS sponsor_hidden
 FROM donations d
 JOIN sponsors s ON s.id = d.sponsor_id
 WHERE d.deleted_at IS NULL
@@ -163,16 +165,13 @@ WHERE d.deleted_at IS NULL
   AND d.status = 'completed'
   AND d.event_at >= $1;
 
--- name: GetDonationsEligibleForAutoComplete :many
-SELECT id, status, event_at
-FROM donations
-WHERE deleted_at IS NULL
-  AND (status = 'open' OR status = 'closed')
-  AND event_at <= $1;
+-- name: TryAdvisoryXactLock :one
+SELECT pg_try_advisory_xact_lock($1::bigint) AS locked;
 
--- name: AutoCompleteDonations :exec
+-- name: AutoCompleteDonations :many
 UPDATE donations
 SET status = 'completed', updated_at = NOW()
 WHERE deleted_at IS NULL
   AND (status = 'open' OR status = 'closed')
-  AND event_at <= $1;
+  AND event_at <= $1
+RETURNING id;

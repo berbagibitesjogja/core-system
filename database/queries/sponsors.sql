@@ -19,6 +19,13 @@ FROM sponsors
 WHERE id = $1 AND deleted_at IS NULL
 LIMIT 1;
 
+-- name: GetSponsorByIDForUpdate :one
+SELECT *
+FROM sponsors
+WHERE id = $1 AND deleted_at IS NULL
+LIMIT 1
+FOR UPDATE;
+
 -- name: UpdateSponsor :one
 UPDATE sponsors
 SET
@@ -48,7 +55,7 @@ FROM sponsors
 WHERE deleted_at IS NULL
   AND (sqlc.narg('hidden')::boolean IS NULL OR hidden = sqlc.narg('hidden'))
   AND (sqlc.narg('variant')::sponsor_variant IS NULL OR variant = sqlc.narg('variant'))
-  AND (sqlc.narg('search')::text IS NULL OR name ILIKE '%' || sqlc.narg('search') || '%')
+  AND (sqlc.narg('search')::text IS NULL OR name ILIKE '%' || sqlc.narg('search') || '%' ESCAPE '\')
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2;
 
@@ -58,4 +65,4 @@ FROM sponsors
 WHERE deleted_at IS NULL
   AND (sqlc.narg('hidden')::boolean IS NULL OR hidden = sqlc.narg('hidden'))
   AND (sqlc.narg('variant')::sponsor_variant IS NULL OR variant = sqlc.narg('variant'))
-  AND (sqlc.narg('search')::text IS NULL OR name ILIKE '%' || sqlc.narg('search') || '%');
+  AND (sqlc.narg('search')::text IS NULL OR name ILIKE '%' || sqlc.narg('search') || '%' ESCAPE '\');

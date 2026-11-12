@@ -24,7 +24,7 @@ CREATE TABLE donations (
 );
 
 CREATE INDEX idx_donations_public ON donations (event_at)
-    WHERE deleted_at IS NULL AND hide_from_public = FALSE AND status = 'open';
+    WHERE deleted_at IS NULL AND hide_from_public = FALSE AND status IN ('open', 'closed');
 CREATE INDEX idx_donations_status_event ON donations (status, event_at DESC)
     WHERE deleted_at IS NULL;
 CREATE INDEX idx_donations_sponsor_id ON donations (sponsor_id);

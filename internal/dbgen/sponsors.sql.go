@@ -18,7 +18,7 @@ FROM sponsors
 WHERE deleted_at IS NULL
   AND ($1::boolean IS NULL OR hidden = $1)
   AND ($2::sponsor_variant IS NULL OR variant = $2)
-  AND ($3::text IS NULL OR name ILIKE '%' || $3 || '%')
+  AND ($3::text IS NULL OR name ILIKE '%' || $3 || '%' ESCAPE '\')
 `
 
 type CountSponsorsParams struct {
@@ -117,13 +117,41 @@ func (q *Queries) GetSponsorByID(ctx context.Context, id uuid.UUID) (Sponsor, er
 	return i, err
 }
 
+const getSponsorByIDForUpdate = `-- name: GetSponsorByIDForUpdate :one
+SELECT id, name, variant, address, email, phone, logo, hidden, hide_donations, created_at, updated_at, deleted_at
+FROM sponsors
+WHERE id = $1 AND deleted_at IS NULL
+LIMIT 1
+FOR UPDATE
+`
+
+func (q *Queries) GetSponsorByIDForUpdate(ctx context.Context, id uuid.UUID) (Sponsor, error) {
+	row := q.db.QueryRow(ctx, getSponsorByIDForUpdate, id)
+	var i Sponsor
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Variant,
+		&i.Address,
+		&i.Email,
+		&i.Phone,
+		&i.Logo,
+		&i.Hidden,
+		&i.HideDonations,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const listSponsors = `-- name: ListSponsors :many
 SELECT id, name, variant, address, email, phone, logo, hidden, hide_donations, created_at, updated_at, deleted_at
 FROM sponsors
 WHERE deleted_at IS NULL
   AND ($3::boolean IS NULL OR hidden = $3)
   AND ($4::sponsor_variant IS NULL OR variant = $4)
-  AND ($5::text IS NULL OR name ILIKE '%' || $5 || '%')
+  AND ($5::text IS NULL OR name ILIKE '%' || $5 || '%' ESCAPE '\')
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2
 `

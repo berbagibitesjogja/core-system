@@ -13,17 +13,33 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const autoCompleteDonations = `-- name: AutoCompleteDonations :exec
+const autoCompleteDonations = `-- name: AutoCompleteDonations :many
 UPDATE donations
 SET status = 'completed', updated_at = NOW()
 WHERE deleted_at IS NULL
   AND (status = 'open' OR status = 'closed')
   AND event_at <= $1
+RETURNING id
 `
 
-func (q *Queries) AutoCompleteDonations(ctx context.Context, eventAt time.Time) error {
-	_, err := q.db.Exec(ctx, autoCompleteDonations, eventAt)
-	return err
+func (q *Queries) AutoCompleteDonations(ctx context.Context, eventAt time.Time) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, autoCompleteDonations, eventAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const countDonationsPublicOpen = `-- name: CountDonationsPublicOpen :one
@@ -63,7 +79,7 @@ FROM donations d
 JOIN sponsors s ON s.id = d.sponsor_id
 WHERE d.deleted_at IS NULL
   AND ($1::donation_status IS NULL OR d.status = $1)
-  AND ($2::text IS NULL OR d.address ILIKE '%' || $2 || '%' OR s.name ILIKE '%' || $2 || '%')
+  AND ($2::text IS NULL OR d.address ILIKE '%' || $2 || '%' ESCAPE '\' OR s.name ILIKE '%' || $2 || '%' ESCAPE '\')
 `
 
 type CountDonationsStaffParams struct {
@@ -222,6 +238,7 @@ SELECT
     s.logo AS sponsor_logo,
     s.hidden AS sponsor_hidden,
     s.hide_donations AS sponsor_hide_donations,
+    s.deleted_at AS sponsor_deleted_at,
     s.email AS sponsor_email,
     s.phone AS sponsor_phone,
     s.address AS sponsor_address,
@@ -254,6 +271,7 @@ type GetDonationDetailsByIDRow struct {
 	SponsorLogo          pgtype.UUID
 	SponsorHidden        bool
 	SponsorHideDonations bool
+	SponsorDeletedAt     pgtype.Timestamptz
 	SponsorEmail         pgtype.Text
 	SponsorPhone         pgtype.Text
 	SponsorAddress       pgtype.Text
@@ -284,46 +302,13 @@ func (q *Queries) GetDonationDetailsByID(ctx context.Context, id uuid.UUID) (Get
 		&i.SponsorLogo,
 		&i.SponsorHidden,
 		&i.SponsorHideDonations,
+		&i.SponsorDeletedAt,
 		&i.SponsorEmail,
 		&i.SponsorPhone,
 		&i.SponsorAddress,
 		&i.CreatedByEmail,
 	)
 	return i, err
-}
-
-const getDonationsEligibleForAutoComplete = `-- name: GetDonationsEligibleForAutoComplete :many
-SELECT id, status, event_at
-FROM donations
-WHERE deleted_at IS NULL
-  AND (status = 'open' OR status = 'closed')
-  AND event_at <= $1
-`
-
-type GetDonationsEligibleForAutoCompleteRow struct {
-	ID      uuid.UUID
-	Status  DonationStatus
-	EventAt time.Time
-}
-
-func (q *Queries) GetDonationsEligibleForAutoComplete(ctx context.Context, eventAt time.Time) ([]GetDonationsEligibleForAutoCompleteRow, error) {
-	rows, err := q.db.Query(ctx, getDonationsEligibleForAutoComplete, eventAt)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetDonationsEligibleForAutoCompleteRow
-	for rows.Next() {
-		var i GetDonationsEligibleForAutoCompleteRow
-		if err := rows.Scan(&i.ID, &i.Status, &i.EventAt); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const listDonationsPublicOpen = `-- name: ListDonationsPublicOpen :many
@@ -334,7 +319,7 @@ SELECT
     s.id AS sponsor_id,
     s.name AS sponsor_name,
     s.logo AS sponsor_logo,
-    (s.hidden OR s.hide_donations)::boolean AS sponsor_hidden
+    (s.hidden OR s.hide_donations OR s.deleted_at IS NOT NULL)::boolean AS sponsor_hidden
 FROM donations d
 JOIN sponsors s ON s.id = d.sponsor_id
 WHERE d.deleted_at IS NULL
@@ -413,7 +398,7 @@ SELECT
     s.id AS sponsor_id,
     s.name AS sponsor_name,
     s.logo AS sponsor_logo,
-    (s.hidden OR s.hide_donations)::boolean AS sponsor_hidden
+    (s.hidden OR s.hide_donations OR s.deleted_at IS NOT NULL)::boolean AS sponsor_hidden
 FROM donations d
 JOIN sponsors s ON s.id = d.sponsor_id
 WHERE d.deleted_at IS NULL
@@ -495,6 +480,7 @@ SELECT
     s.logo AS sponsor_logo,
     s.hidden AS sponsor_hidden,
     s.hide_donations AS sponsor_hide_donations,
+    s.deleted_at AS sponsor_deleted_at,
     s.email AS sponsor_email,
     s.phone AS sponsor_phone,
     s.address AS sponsor_address,
@@ -504,7 +490,7 @@ JOIN sponsors s ON s.id = d.sponsor_id
 LEFT JOIN users u ON u.id = d.created_by
 WHERE d.deleted_at IS NULL
   AND ($3::donation_status IS NULL OR d.status = $3)
-  AND ($4::text IS NULL OR d.address ILIKE '%' || $4 || '%' OR s.name ILIKE '%' || $4 || '%')
+  AND ($4::text IS NULL OR d.address ILIKE '%' || $4 || '%' ESCAPE '\' OR s.name ILIKE '%' || $4 || '%' ESCAPE '\')
 ORDER BY d.event_at DESC
 LIMIT $1 OFFSET $2
 `
@@ -537,6 +523,7 @@ type ListDonationsStaffRow struct {
 	SponsorLogo          pgtype.UUID
 	SponsorHidden        bool
 	SponsorHideDonations bool
+	SponsorDeletedAt     pgtype.Timestamptz
 	SponsorEmail         pgtype.Text
 	SponsorPhone         pgtype.Text
 	SponsorAddress       pgtype.Text
@@ -578,6 +565,7 @@ func (q *Queries) ListDonationsStaff(ctx context.Context, arg ListDonationsStaff
 			&i.SponsorLogo,
 			&i.SponsorHidden,
 			&i.SponsorHideDonations,
+			&i.SponsorDeletedAt,
 			&i.SponsorEmail,
 			&i.SponsorPhone,
 			&i.SponsorAddress,
@@ -612,6 +600,17 @@ func (q *Queries) SoftDeleteDonation(ctx context.Context, id uuid.UUID) (SoftDel
 	var i SoftDeleteDonationRow
 	err := row.Scan(&i.ID, &i.DeletedAt)
 	return i, err
+}
+
+const tryAdvisoryXactLock = `-- name: TryAdvisoryXactLock :one
+SELECT pg_try_advisory_xact_lock($1::bigint) AS locked
+`
+
+func (q *Queries) TryAdvisoryXactLock(ctx context.Context, dollar_1 int64) (bool, error) {
+	row := q.db.QueryRow(ctx, tryAdvisoryXactLock, dollar_1)
+	var locked bool
+	err := row.Scan(&locked)
+	return locked, err
 }
 
 const updateDonation = `-- name: UpdateDonation :one
