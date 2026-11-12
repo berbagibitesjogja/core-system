@@ -42,21 +42,23 @@ INSERT INTO sponsors (
     email,
     phone,
     logo,
-    hidden
+    hidden,
+    hide_donations
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7
+    $1, $2, $3, $4, $5, $6, $7, $8
 )
-RETURNING id, name, variant, address, email, phone, logo, hidden, created_at, updated_at, deleted_at
+RETURNING id, name, variant, address, email, phone, logo, hidden, hide_donations, created_at, updated_at, deleted_at
 `
 
 type CreateSponsorParams struct {
-	Name    string
-	Variant NullSponsorVariant
-	Address pgtype.Text
-	Email   pgtype.Text
-	Phone   pgtype.Text
-	Logo    pgtype.UUID
-	Hidden  bool
+	Name          string
+	Variant       SponsorVariant
+	Address       pgtype.Text
+	Email         pgtype.Text
+	Phone         pgtype.Text
+	Logo          pgtype.UUID
+	Hidden        bool
+	HideDonations bool
 }
 
 func (q *Queries) CreateSponsor(ctx context.Context, arg CreateSponsorParams) (Sponsor, error) {
@@ -68,6 +70,7 @@ func (q *Queries) CreateSponsor(ctx context.Context, arg CreateSponsorParams) (S
 		arg.Phone,
 		arg.Logo,
 		arg.Hidden,
+		arg.HideDonations,
 	)
 	var i Sponsor
 	err := row.Scan(
@@ -79,6 +82,7 @@ func (q *Queries) CreateSponsor(ctx context.Context, arg CreateSponsorParams) (S
 		&i.Phone,
 		&i.Logo,
 		&i.Hidden,
+		&i.HideDonations,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
@@ -87,7 +91,7 @@ func (q *Queries) CreateSponsor(ctx context.Context, arg CreateSponsorParams) (S
 }
 
 const getSponsorByID = `-- name: GetSponsorByID :one
-SELECT id, name, variant, address, email, phone, logo, hidden, created_at, updated_at, deleted_at
+SELECT id, name, variant, address, email, phone, logo, hidden, hide_donations, created_at, updated_at, deleted_at
 FROM sponsors
 WHERE id = $1 AND deleted_at IS NULL
 LIMIT 1
@@ -105,6 +109,7 @@ func (q *Queries) GetSponsorByID(ctx context.Context, id uuid.UUID) (Sponsor, er
 		&i.Phone,
 		&i.Logo,
 		&i.Hidden,
+		&i.HideDonations,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
@@ -113,7 +118,7 @@ func (q *Queries) GetSponsorByID(ctx context.Context, id uuid.UUID) (Sponsor, er
 }
 
 const listSponsors = `-- name: ListSponsors :many
-SELECT id, name, variant, address, email, phone, logo, hidden, created_at, updated_at, deleted_at
+SELECT id, name, variant, address, email, phone, logo, hidden, hide_donations, created_at, updated_at, deleted_at
 FROM sponsors
 WHERE deleted_at IS NULL
   AND ($3::boolean IS NULL OR hidden = $3)
@@ -155,6 +160,7 @@ func (q *Queries) ListSponsors(ctx context.Context, arg ListSponsorsParams) ([]S
 			&i.Phone,
 			&i.Logo,
 			&i.Hidden,
+			&i.HideDonations,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
@@ -200,20 +206,22 @@ SET
     phone = $6,
     logo = $7,
     hidden = $8,
+    hide_donations = $9,
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, name, variant, address, email, phone, logo, hidden, created_at, updated_at, deleted_at
+RETURNING id, name, variant, address, email, phone, logo, hidden, hide_donations, created_at, updated_at, deleted_at
 `
 
 type UpdateSponsorParams struct {
-	ID      uuid.UUID
-	Name    string
-	Variant NullSponsorVariant
-	Address pgtype.Text
-	Email   pgtype.Text
-	Phone   pgtype.Text
-	Logo    pgtype.UUID
-	Hidden  bool
+	ID            uuid.UUID
+	Name          string
+	Variant       SponsorVariant
+	Address       pgtype.Text
+	Email         pgtype.Text
+	Phone         pgtype.Text
+	Logo          pgtype.UUID
+	Hidden        bool
+	HideDonations bool
 }
 
 func (q *Queries) UpdateSponsor(ctx context.Context, arg UpdateSponsorParams) (Sponsor, error) {
@@ -226,6 +234,7 @@ func (q *Queries) UpdateSponsor(ctx context.Context, arg UpdateSponsorParams) (S
 		arg.Phone,
 		arg.Logo,
 		arg.Hidden,
+		arg.HideDonations,
 	)
 	var i Sponsor
 	err := row.Scan(
@@ -237,6 +246,7 @@ func (q *Queries) UpdateSponsor(ctx context.Context, arg UpdateSponsorParams) (S
 		&i.Phone,
 		&i.Logo,
 		&i.Hidden,
+		&i.HideDonations,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,

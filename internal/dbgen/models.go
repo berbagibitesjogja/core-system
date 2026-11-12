@@ -13,6 +13,51 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type DonationStatus string
+
+const (
+	DonationStatusDraft     DonationStatus = "draft"
+	DonationStatusOpen      DonationStatus = "open"
+	DonationStatusClosed    DonationStatus = "closed"
+	DonationStatusCompleted DonationStatus = "completed"
+	DonationStatusCancelled DonationStatus = "cancelled"
+)
+
+func (e *DonationStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = DonationStatus(s)
+	case string:
+		*e = DonationStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for DonationStatus: %T", src)
+	}
+	return nil
+}
+
+type NullDonationStatus struct {
+	DonationStatus DonationStatus
+	Valid          bool // Valid is true if DonationStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullDonationStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.DonationStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.DonationStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullDonationStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.DonationStatus), nil
+}
+
 type FileUploadStatus string
 
 const (
@@ -54,6 +99,53 @@ func (ns NullFileUploadStatus) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(ns.FileUploadStatus), nil
+}
+
+type FoodUnit string
+
+const (
+	FoodUnitKg      FoodUnit = "kg"
+	FoodUnitG       FoodUnit = "g"
+	FoodUnitL       FoodUnit = "l"
+	FoodUnitMl      FoodUnit = "ml"
+	FoodUnitPortion FoodUnit = "portion"
+	FoodUnitPack    FoodUnit = "pack"
+	FoodUnitPiece   FoodUnit = "piece"
+)
+
+func (e *FoodUnit) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = FoodUnit(s)
+	case string:
+		*e = FoodUnit(s)
+	default:
+		return fmt.Errorf("unsupported scan type for FoodUnit: %T", src)
+	}
+	return nil
+}
+
+type NullFoodUnit struct {
+	FoodUnit FoodUnit
+	Valid    bool // Valid is true if FoodUnit is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullFoodUnit) Scan(value interface{}) error {
+	if value == nil {
+		ns.FoodUnit, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.FoodUnit.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullFoodUnit) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.FoodUnit), nil
 }
 
 type SponsorVariant string
@@ -205,6 +297,30 @@ type Division struct {
 	DeletedAt pgtype.Timestamptz
 }
 
+type Donation struct {
+	ID             uuid.UUID
+	SponsorID      uuid.UUID
+	CreatedBy      pgtype.UUID
+	EventAt        time.Time
+	Quota          int32
+	HeroQuota      int32
+	Remain         int32
+	Address        pgtype.Text
+	Maps           pgtype.Text
+	Message        pgtype.Text
+	Status         DonationStatus
+	HideFromPublic bool
+	HideSponsor    bool
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	DeletedAt      pgtype.Timestamptz
+}
+
+type DonationTarget struct {
+	DonationID            uuid.UUID
+	BeneficiaryCategoryID uuid.UUID
+}
+
 type File struct {
 	ID            uuid.UUID
 	StorageBucket string
@@ -216,6 +332,13 @@ type File struct {
 	HashSha256    pgtype.Text
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+}
+
+type Food struct {
+	DonationID uuid.UUID
+	FoodItemID int32
+	Quantity   pgtype.Numeric
+	Unit       FoodUnit
 }
 
 type FoodItem struct {
@@ -282,17 +405,18 @@ type ReimbursementFile struct {
 }
 
 type Sponsor struct {
-	ID        uuid.UUID
-	Name      string
-	Variant   NullSponsorVariant
-	Address   pgtype.Text
-	Email     pgtype.Text
-	Phone     pgtype.Text
-	Logo      pgtype.UUID
-	Hidden    bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	DeletedAt pgtype.Timestamptz
+	ID            uuid.UUID
+	Name          string
+	Variant       SponsorVariant
+	Address       pgtype.Text
+	Email         pgtype.Text
+	Phone         pgtype.Text
+	Logo          pgtype.UUID
+	Hidden        bool
+	HideDonations bool
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	DeletedAt     pgtype.Timestamptz
 }
 
 type Staff struct {

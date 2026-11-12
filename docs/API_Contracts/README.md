@@ -13,4 +13,5 @@ This directory contains the official API specifications, data models, role guard
 | **Beneficiary Categories**| [`BeneficiaryCategories.md`](./BeneficiaryCategories.md) | Management of beneficiary criteria, university domain associations, and public visibility |
 | **Sponsors** | [`Sponsors.md`](./Sponsors.md) | Sponsor directory, tiers, and logo management |
 | **Food Items** | [`FoodItems.md`](./FoodItems.md) | Food inventory, categories, expiration tracking, and stock management |
+| **Donations** | [`Donations.md`](./Donations.md) | Food distribution events, quota allocation, hero claims, lifecycle transitions, and privacy masking |
 | **Reimbursements** | [`Reimbursements.md`](./Reimbursements.md) | Operational expense claims, receipt file attachments, and payment approvals |

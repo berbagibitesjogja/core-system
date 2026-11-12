@@ -1,0 +1,190 @@
+info:
+  name: Create Donation
+  type: http
+  seq: 3
+
+http:
+  method: POST
+  url: "{{base_url}}/donations"
+  body:
+    type: json
+    data: |-
+      {
+        "sponsor_id": "fff55e2d-65d2-489e-8c86-e9dab775d277",
+        "event_at": "2026-11-20T10:00:00Z",
+        "quota": 50,
+        "hero_quota": 25,
+        "address": "Di UGM",
+        "maps": "https://ugm.ac.id",
+        "message": "Masuk UGM belok kanan",
+        "hide_from_public": false,
+        "hide_sponsor": false,
+        "foods": [
+          {
+            "food_item_id": 1,
+            "quantity": 50.0,
+            "unit": "kg"
+          }
+        ],
+        "beneficiary_category_ids": [
+          "08ab7a6f-b7fc-4011-bcae-e7aef2d5cbeb"
+        ]
+      }
+
+      // {
+      //   "sponsor_id": UUID
+      //   "event_at": YYYY-MM-DDTHH:MM:SS
+      //   "quota": int > 0
+      //   "hero_quota"?: int >= 0 and <= quota
+      //   "address"?: max 500
+      //   "maps"?: string
+      //   "message"?: string
+      //   "hide_from_public"?: boolean
+      //   "hide_sponsor"?: boolean
+      //   "foods": [
+      //     {
+      //       "food_item_id": int > 0
+      //       "quantity": float > 0
+      //       "unit": kg, g, l, ml, portion, pack, piece
+      //     }
+      //   ]
+      //   "beneficiary_category_ids": [UUID]
+      // }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: "201"
+    request:
+      url: "{{base_url}}/donations"
+      method: POST
+      body:
+        type: json
+        data: |-
+          {
+            "sponsor_id": "87acbb21-a5b2-4d99-8511-48cb43253df7",
+            "event_at": "2026-11-20T10:00:00Z",
+            "quota": 50,
+            "hero_quota": 25,
+            "address": "Di UGM",
+            "maps": "https://ugm.ac.id",
+            "message": "Masuk UGM belok kanan",
+            "hide_from_public": false,
+            "hide_sponsor": false,
+            "foods": [
+              {
+                "food_item_id": 1,
+                "quantity": 50.0,
+                "unit": "kg"
+              }
+            ],
+            "beneficiary_category_ids": [
+              "08ab7a6f-b7fc-4011-bcae-e7aef2d5cbeb"
+            ]
+          }
+
+          // {
+          //   "sponsor_id": UUID
+          //   "event_at": YYYY-MM-DDTHH:MM:SS
+          //   "quota": int > 0
+          //   "hero_quota"?: int >= 0 and <= quota
+          //   "address"?: max 500
+          //   "maps"?: string
+          //   "message"?: string
+          //   "hide_from_public"?: boolean
+          //   "hide_sponsor"?: boolean
+          //   "foods": [
+          //     {
+          //       "food_item_id": int > 0
+          //       "quantity": float > 0
+          //       "unit": kg, g, l, ml, portion, pack, piece
+          //     }
+          //   ]
+          //   "beneficiary_category_ids": [UUID]
+          // }
+    response:
+      status: 201
+      statusText: Created
+      headers:
+        - name: access-control-allow-headers
+          value: Content-Type, Authorization, X-Requested-With, Accept, Origin
+        - name: access-control-allow-methods
+          value: GET, POST, PUT, PATCH, DELETE, OPTIONS
+        - name: access-control-allow-origin
+          value: "*"
+        - name: access-control-expose-headers
+          value: Content-Length, Content-Type
+        - name: access-control-max-age
+          value: "86400"
+        - name: content-type
+          value: application/json; charset=utf-8
+        - name: referrer-policy
+          value: strict-origin-when-cross-origin
+        - name: x-content-type-options
+          value: nosniff
+        - name: x-frame-options
+          value: DENY
+        - name: x-request-id
+          value: ref_ab7fef24
+        - name: x-xss-protection
+          value: 1; mode=block
+        - name: date
+          value: Thu, 12 Nov 2026 07:39:42 GMT
+        - name: content-length
+          value: "938"
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "Donation created successfully",
+            "data": {
+              "id": "d97fce39-d4ff-4d27-8d97-6c096edd2b64",
+              "event_at": "2026-11-20T17:00:00+07:00",
+              "quota": 50,
+              "hero_quota": 25,
+              "remain": 25,
+              "address": "Di UGM",
+              "maps": "https://ugm.ac.id",
+              "message": "Masuk UGM belok kanan",
+              "status": "draft",
+              "hide_from_public": false,
+              "hide_sponsor": false,
+              "created_at": "2026-11-12T14:39:42+07:00",
+              "updated_at": "2026-11-12T14:39:42+07:00",
+              "sponsor": {
+                "id": "87acbb21-a5b2-4d99-8511-48cb43253df7",
+                "name": "PT Berbagi Bites Jogja",
+                "logo": null,
+                "hidden": true,
+                "hide_donations": true,
+                "email": "it@berbagibitesjogja.com",
+                "phone": "620000000001",
+                "address": "Di Sini Senang"
+              },
+              "created_by": {
+                "id": "00000000-0000-0000-0000-000000000001",
+                "email": "it@berbagibitesjogja.com"
+              },
+              "foods": [
+                {
+                  "food_item_id": 1,
+                  "name": "Acar",
+                  "quantity": 50,
+                  "unit": "kg"
+                }
+              ],
+              "targets": [
+                {
+                  "beneficiary_category_id": "08ab7a6f-b7fc-4011-bcae-e7aef2d5cbeb",
+                  "name": "Universitas Gadjah Mada",
+                  "variant": "university"
+                }
+              ]
+            }
+          }

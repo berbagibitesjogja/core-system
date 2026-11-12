@@ -112,6 +112,7 @@ Retrieves a paginated list of sponsors with optional query filtering. Unauthenti
       "phone": "6200000000001",
       "logo": "b9e87ca6-adb2-e0d2-c24b-93752b7555b5",
       "hidden": false,
+      "hide_donations": false,
       "created_at": "2026-11-06T23:21:40+07:00",
       "updated_at": "2026-11-06T23:21:40+07:00"
     }
@@ -168,6 +169,7 @@ Retrieves an active (non-deleted) sponsor by UUID. If the sponsor is hidden, pub
     "phone": "6200000000001",
     "logo": null,
     "hidden": false,
+      "hide_donations": false,
     "created_at": "2026-11-06T23:21:40+07:00",
     "updated_at": "2026-11-06T23:21:40+07:00"
   }
@@ -220,13 +222,14 @@ Creates a new sponsor entity in the database. The database trigger `trg_normaliz
 
 | Field | Type | Required | Rules & Constraints |
 | :--- | :--- | :--- | :--- |
-| `name` | string | **Yes** | Max 50 characters. Must be unique among active sponsors (`deleted_at IS NULL`). |
+| `name` | string | **Yes** | Max 150 characters. Must be unique among active sponsors (`deleted_at IS NULL`). |
 | `variant` | string | No | One of: `company`, `individual`. Defaults to `individual`. |
 | `address` | string | No | Max 500 characters. |
 | `email` | string | No | Max 255 characters. Must contain valid `@` format if provided. |
 | `phone` | string | No | Max 20 characters. Automatically sanitized to `62...` format by database trigger. |
 | `logo` | string (UUID) | No | Must be a valid UUID referencing an existing record in `files(id)`. Set to `null` if omitted. |
 | `hidden` | boolean | No | Defaults to `false`. |
+| `hide_donations` | boolean | No | Defaults to `true`. Controls default anonymity across all distributions. |
 
 #### Responses
 
@@ -244,6 +247,7 @@ Creates a new sponsor entity in the database. The database trigger `trg_normaliz
     "phone": "6200000000001",
     "logo": null,
     "hidden": false,
+      "hide_donations": false,
     "created_at": "2026-11-06T23:27:53+07:00",
     "updated_at": "2026-11-06T23:27:53+07:00"
   }
@@ -313,13 +317,14 @@ Applies partial updates to an existing sponsor. Follows the **Safe PATCH pattern
 
 | Field | Type | Required | Rules & Constraints |
 | :--- | :--- | :--- | :--- |
-| `name` | string | No | Max 50 characters. Trapped for duplicate active name collision. |
+| `name` | string | No | Max 150 characters. Trapped for duplicate active name collision. |
 | `variant` | string | No | One of: `company`, `individual`. |
 | `address` | string | No | Max 500 characters. Pass empty string `""` to clear. |
 | `email` | string | No | Max 255 characters. Pass empty string `""` to clear. |
 | `phone` | string | No | Max 20 characters. Automatically normalized if updated. Pass empty string `""` to clear. |
 | `logo` | string (UUID) | No | Must be valid UUID referencing `files(id)`. Pass empty string `""` to clear. |
 | `hidden` | boolean | No | Toggle visibility. |
+| `hide_donations` | boolean | No | Toggle default distribution anonymity for this sponsor. |
 
 #### Responses
 
@@ -337,6 +342,7 @@ Applies partial updates to an existing sponsor. Follows the **Safe PATCH pattern
     "phone": "6200000000001",
     "logo": null,
     "hidden": true,
+      "hide_donations": true,
     "created_at": "2026-11-06T23:27:53+07:00",
     "updated_at": "2026-11-06T23:31:12+07:00"
   }

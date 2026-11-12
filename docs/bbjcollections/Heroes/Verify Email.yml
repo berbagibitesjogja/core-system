@@ -22,7 +22,7 @@ http:
 runtime:
   variables:
     - name: emailCode
-      value: "927396"
+      value: "073319"
   scripts:
     - type: after-response
       code: |-

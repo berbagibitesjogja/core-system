@@ -34,43 +34,43 @@ func NewSponsorHandler(pool *pgxpool.Pool, cfg *config.Config) *SponsorHandler {
 }
 
 type CreateSponsorRequest struct {
-	Name    string  `json:"name"`
-	Variant *string `json:"variant,omitempty"`
-	Address *string `json:"address,omitempty"`
-	Email   *string `json:"email,omitempty"`
-	Phone   *string `json:"phone,omitempty"`
-	Logo    *string `json:"logo,omitempty"`
-	Hidden  *bool   `json:"hidden,omitempty"`
+	Name          string  `json:"name"`
+	Variant       *string `json:"variant,omitempty"`
+	Address       *string `json:"address,omitempty"`
+	Email         *string `json:"email,omitempty"`
+	Phone         *string `json:"phone,omitempty"`
+	Logo          *string `json:"logo,omitempty"`
+	Hidden        *bool   `json:"hidden,omitempty"`
+	HideDonations *bool   `json:"hide_donations,omitempty"`
 }
 
 type UpdateSponsorRequest struct {
-	Name    *string `json:"name,omitempty"`
-	Variant *string `json:"variant,omitempty"`
-	Address *string `json:"address,omitempty"`
-	Email   *string `json:"email,omitempty"`
-	Phone   *string `json:"phone,omitempty"`
-	Logo    *string `json:"logo,omitempty"`
-	Hidden  *bool   `json:"hidden,omitempty"`
+	Name          *string `json:"name,omitempty"`
+	Variant       *string `json:"variant,omitempty"`
+	Address       *string `json:"address,omitempty"`
+	Email         *string `json:"email,omitempty"`
+	Phone         *string `json:"phone,omitempty"`
+	Logo          *string `json:"logo,omitempty"`
+	Hidden        *bool   `json:"hidden,omitempty"`
+	HideDonations *bool   `json:"hide_donations,omitempty"`
 }
 
 type SponsorResponse struct {
-	ID        string  `json:"id"`
-	Name      string  `json:"name"`
-	Variant   string  `json:"variant"`
-	Address   *string `json:"address,omitempty"`
-	Email     *string `json:"email,omitempty"`
-	Phone     *string `json:"phone,omitempty"`
-	Logo      *string `json:"logo,omitempty"`
-	Hidden    bool    `json:"hidden"`
-	CreatedAt string  `json:"created_at"`
-	UpdatedAt string  `json:"updated_at"`
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	Variant       string  `json:"variant"`
+	Address       *string `json:"address,omitempty"`
+	Email         *string `json:"email,omitempty"`
+	Phone         *string `json:"phone,omitempty"`
+	Logo          *string `json:"logo,omitempty"`
+	Hidden        bool    `json:"hidden"`
+	HideDonations bool    `json:"hide_donations"`
+	CreatedAt     string  `json:"created_at"`
+	UpdatedAt     string  `json:"updated_at"`
 }
 
 func toSponsorResponse(s dbgen.Sponsor) SponsorResponse {
-	variant := string(dbgen.SponsorVariantIndividual)
-	if s.Variant.Valid {
-		variant = string(s.Variant.SponsorVariant)
-	}
+	variant := string(s.Variant)
 
 	var address *string
 	if s.Address.Valid {
@@ -94,16 +94,17 @@ func toSponsorResponse(s dbgen.Sponsor) SponsorResponse {
 	}
 
 	return SponsorResponse{
-		ID:        s.ID.String(),
-		Name:      s.Name,
-		Variant:   variant,
-		Address:   address,
-		Email:     email,
-		Phone:     phone,
-		Logo:      logo,
-		Hidden:    s.Hidden,
-		CreatedAt: s.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: s.UpdatedAt.Format(time.RFC3339),
+		ID:            s.ID.String(),
+		Name:          s.Name,
+		Variant:       variant,
+		Address:       address,
+		Email:         email,
+		Phone:         phone,
+		Logo:          logo,
+		Hidden:        s.Hidden,
+		HideDonations: s.HideDonations,
+		CreatedAt:     s.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:     s.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -129,7 +130,7 @@ func (h *SponsorHandler) ListSponsorsHandler(w http.ResponseWriter, r *http.Requ
 
 	var hiddenParam pgtype.Bool
 	claims, hasClaims := middleware.GetClaims(r.Context())
-	isStaff := hasClaims && claims != nil
+	isStaff := hasClaims && claims != nil && claims.IsStaff
 
 	if !isStaff {
 		hiddenParam = pgtype.Bool{Bool: false, Valid: true}
@@ -216,7 +217,7 @@ func (h *SponsorHandler) GetSponsorByIDHandler(w http.ResponseWriter, r *http.Re
 
 	if sponsor.Hidden {
 		claims, ok := middleware.GetClaims(r.Context())
-		if !ok || claims == nil {
+		if !ok || claims == nil || !claims.IsStaff {
 			response.NotFound(w, r, "Sponsor not found")
 			return
 		}
@@ -237,18 +238,18 @@ func (h *SponsorHandler) CreateSponsorHandler(w http.ResponseWriter, r *http.Req
 
 	if req.Name == "" {
 		fieldErrors["name"] = "Sponsor name is required"
-	} else if len(req.Name) > 50 {
-		fieldErrors["name"] = "Sponsor name cannot exceed 50 characters"
+	} else if len(req.Name) > 150 {
+		fieldErrors["name"] = "Sponsor name cannot exceed 150 characters"
 	}
 
-	variantParam := dbgen.NullSponsorVariant{SponsorVariant: dbgen.SponsorVariantIndividual, Valid: true}
+	variantParam := dbgen.SponsorVariantIndividual
 	if req.Variant != nil {
 		v := strings.TrimSpace(strings.ToLower(*req.Variant))
 		switch v {
 		case string(dbgen.SponsorVariantCompany):
-			variantParam = dbgen.NullSponsorVariant{SponsorVariant: dbgen.SponsorVariantCompany, Valid: true}
+			variantParam = dbgen.SponsorVariantCompany
 		case string(dbgen.SponsorVariantIndividual):
-			variantParam = dbgen.NullSponsorVariant{SponsorVariant: dbgen.SponsorVariantIndividual, Valid: true}
+			variantParam = dbgen.SponsorVariantIndividual
 		default:
 			fieldErrors["variant"] = "Variant must be 'company' or 'individual'"
 		}
@@ -308,14 +309,20 @@ func (h *SponsorHandler) CreateSponsorHandler(w http.ResponseWriter, r *http.Req
 		hidden = *req.Hidden
 	}
 
+	hideDonations := true
+	if req.HideDonations != nil {
+		hideDonations = *req.HideDonations
+	}
+
 	sponsor, err := h.queries.CreateSponsor(r.Context(), dbgen.CreateSponsorParams{
-		Name:    req.Name,
-		Variant: variantParam,
-		Address: addressParam,
-		Email:   emailParam,
-		Phone:   phoneParam,
-		Logo:    logoParam,
-		Hidden:  hidden,
+		Name:          req.Name,
+		Variant:       variantParam,
+		Address:       addressParam,
+		Email:         emailParam,
+		Phone:         phoneParam,
+		Logo:          logoParam,
+		Hidden:        hidden,
+		HideDonations: hideDonations,
 	})
 	if err != nil {
 		if response.HandleDBError(w, r, err) {
@@ -358,8 +365,8 @@ func (h *SponsorHandler) UpdateSponsorHandler(w http.ResponseWriter, r *http.Req
 		trimmedName := strings.TrimSpace(*req.Name)
 		if trimmedName == "" {
 			fieldErrors["name"] = "Sponsor name cannot be empty"
-		} else if len(trimmedName) > 50 {
-			fieldErrors["name"] = "Sponsor name cannot exceed 50 characters"
+		} else if len(trimmedName) > 150 {
+			fieldErrors["name"] = "Sponsor name cannot exceed 150 characters"
 		} else {
 			name = trimmedName
 		}
@@ -370,9 +377,9 @@ func (h *SponsorHandler) UpdateSponsorHandler(w http.ResponseWriter, r *http.Req
 		v := strings.TrimSpace(strings.ToLower(*req.Variant))
 		switch v {
 		case string(dbgen.SponsorVariantCompany):
-			variant = dbgen.NullSponsorVariant{SponsorVariant: dbgen.SponsorVariantCompany, Valid: true}
+			variant = dbgen.SponsorVariantCompany
 		case string(dbgen.SponsorVariantIndividual):
-			variant = dbgen.NullSponsorVariant{SponsorVariant: dbgen.SponsorVariantIndividual, Valid: true}
+			variant = dbgen.SponsorVariantIndividual
 		default:
 			fieldErrors["variant"] = "Variant must be 'company' or 'individual'"
 		}
@@ -436,20 +443,26 @@ func (h *SponsorHandler) UpdateSponsorHandler(w http.ResponseWriter, r *http.Req
 		hidden = *req.Hidden
 	}
 
+	hideDonations := existing.HideDonations
+	if req.HideDonations != nil {
+		hideDonations = *req.HideDonations
+	}
+
 	if len(fieldErrors) > 0 {
 		response.BadRequest(w, r, "VAL_001", "Validation failed", fieldErrors)
 		return
 	}
 
 	updated, err := h.queries.UpdateSponsor(r.Context(), dbgen.UpdateSponsorParams{
-		ID:      sponsorID,
-		Name:    name,
-		Variant: variant,
-		Address: address,
-		Email:   email,
-		Phone:   phone,
-		Logo:    logo,
-		Hidden:  hidden,
+		ID:            sponsorID,
+		Name:          name,
+		Variant:       variant,
+		Address:       address,
+		Email:         email,
+		Phone:         phone,
+		Logo:          logo,
+		Hidden:        hidden,
+		HideDonations: hideDonations,
 	})
 	if err != nil {
 		if response.HandleDBError(w, r, err) {
