@@ -8,22 +8,25 @@ http:
   url: "{{base_url}}/sponsors/:id"
   params:
     - name: id
-      value: dbeed153-3ac5-46d2-90c3-83e9d5ac8318
+      value: 87acbb21-a5b2-4d99-8511-48cb43253df7
       type: path
   body:
     type: json
     data: |-
       {
-        "address": "Di Sini Senang"
+        "address": "Di Sini Senang",
+        "hidden": true,
+        "hide_donations": true
       }
       // {
-      //   "name"?: max 50
+      //   "name"?: max 150
       //   "variant"?: company, individual
       //   "address"?: max 500
       //   "email"?: max 255
       //   "phone"?: max 20
       //   "logo"?: UUID
       //   "hidden"?: boolean
+      //   "hide_donations"?: boolean
       // }
   auth: inherit
 
@@ -40,22 +43,25 @@ examples:
       method: PATCH
       params:
         - name: id
-          value: dbeed153-3ac5-46d2-90c3-83e9d5ac8318
+          value: 87acbb21-a5b2-4d99-8511-48cb43253df7
           type: path
       body:
         type: json
         data: |-
           {
-            "address": "Di Sini Senang"
+            "address": "Di Sini Senang",
+            "hidden": true,
+            "hide_donations": true
           }
           // {
-          //   "name"?: max 50
+          //   "name"?: max 150
           //   "variant"?: company, individual
           //   "address"?: max 500
           //   "email"?: max 255
           //   "phone"?: max 20
           //   "logo"?: UUID
           //   "hidden"?: boolean
+          //   "hide_donations"?: boolean
           // }
     response:
       status: 200
@@ -80,13 +86,13 @@ examples:
         - name: x-frame-options
           value: DENY
         - name: x-request-id
-          value: ref_88bc03a0
+          value: ref_63f1c73d
         - name: x-xss-protection
           value: 1; mode=block
         - name: date
-          value: Fri, 06 Nov 2026 16:31:31 GMT
+          value: Thu, 12 Nov 2026 07:28:47 GMT
         - name: content-length
-          value: "349"
+          value: "370"
       body:
         type: json
         data: |-
@@ -94,14 +100,15 @@ examples:
             "status": "success",
             "message": "Sponsor updated successfully",
             "data": {
-              "id": "dbeed153-3ac5-46d2-90c3-83e9d5ac8318",
+              "id": "87acbb21-a5b2-4d99-8511-48cb43253df7",
               "name": "PT Berbagi Bites Jogja",
               "variant": "company",
               "address": "Di Sini Senang",
               "email": "it@berbagibitesjogja.com",
               "phone": "620000000001",
-              "hidden": false,
-              "created_at": "2026-11-06T23:27:53+07:00",
-              "updated_at": "2026-11-06T23:31:31+07:00"
+              "hidden": true,
+              "hide_donations": true,
+              "created_at": "2026-11-12T14:27:06+07:00",
+              "updated_at": "2026-11-12T14:28:47+07:00"
             }
           }

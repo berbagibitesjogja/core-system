@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/berbagibitesjogja/core-system/internal/auth"
@@ -59,14 +60,16 @@ func TestSponsorCRUD(t *testing.T) {
 		email := "sponsor@example.com"
 		phone := "0812-3456-7890" // Trigger should normalize to 6281234567890
 		hidden := false
+		hideDonations := false
 
 		body, _ := json.Marshal(CreateSponsorRequest{
-			Name:    testName,
-			Variant: &variant,
-			Address: &address,
-			Email:   &email,
-			Phone:   &phone,
-			Hidden:  &hidden,
+			Name:          testName,
+			Variant:       &variant,
+			Address:       &address,
+			Email:         &email,
+			Phone:         &phone,
+			Hidden:        &hidden,
+			HideDonations: &hideDonations,
 		})
 
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/sponsors", bytes.NewReader(body))
@@ -96,6 +99,9 @@ func TestSponsorCRUD(t *testing.T) {
 		}
 		if spResp.Phone == nil || *spResp.Phone != "6281234567890" {
 			t.Errorf("expected normalized phone '6281234567890', got %v", spResp.Phone)
+		}
+		if spResp.HideDonations != false {
+			t.Errorf("expected hide_donations false, got %v", spResp.HideDonations)
 		}
 
 		createdID = spResp.ID
@@ -159,7 +165,7 @@ func TestSponsorCRUD(t *testing.T) {
 
 	t.Run("Create Sponsor Validation Failures (400 VAL_001)", func(t *testing.T) {
 		invalidVariant := "non-profit"
-		tooLongName := "This name is definitely going to exceed the fifty characters limit allowed for sponsors"
+		tooLongName := strings.Repeat("A", 151)
 		invalidEmail := "not-an-email"
 
 		body, _ := json.Marshal(CreateSponsorRequest{
@@ -389,6 +395,43 @@ func TestSponsorVisibilityAndFiltering(t *testing.T) {
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404 Not Found for unauthenticated access to hidden sponsor, got %d", rec.Code)
+		}
+	})
+
+	t.Run("Authenticated hero cannot see hidden sponsor in list even with ?hidden=true", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/sponsors?search=Visibility&hidden=true", nil)
+		req = setHeroAuth(req)
+		rec := httptest.NewRecorder()
+
+		h.ListSponsorsHandler(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		dataBytes, _ := json.Marshal(resp.Data)
+		var list []SponsorResponse
+		_ = json.Unmarshal(dataBytes, &list)
+
+		for _, item := range list {
+			if item.Name == hiddenName {
+				t.Fatalf("authenticated hero must NOT see hidden sponsor: %s", item.Name)
+			}
+		}
+	})
+
+	t.Run("Authenticated hero get of hidden sponsor returns 404", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/sponsors/"+hiddenID, nil)
+		req.SetPathValue("id", hiddenID)
+		req = setHeroAuth(req)
+		rec := httptest.NewRecorder()
+
+		h.GetSponsorByIDHandler(rec, req)
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 Not Found for hero access to hidden sponsor, got %d", rec.Code)
 		}
 	})
 

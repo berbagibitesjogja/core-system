@@ -32,6 +32,7 @@ func TestActorBoundariesInRoutes(t *testing.T) {
 	defer pool.Close()
 
 	cfg := config.LoadConfig()
+	cfg.AppConfig.RateLimit = 10000
 	router := NewRouter(RouterConfig{
 		Pool:   pool,
 		Config: &cfg,
@@ -44,11 +45,25 @@ func TestActorBoundariesInRoutes(t *testing.T) {
 		t.Fatalf("failed to sign hero token: %v", err)
 	}
 
-	// Generate staff access token (is_staff = true, is_hero = false)
-	staffID := uuid.New()
-	staffToken, err := auth.SignAccessToken(staffID, "staff.test@berbagibitesjogja.com", true, "staff", 1, false, cfg.AppConfig.JWTSecret, 15*time.Minute)
+	// Generate IT staff token (division_id = 1, is_staff = true)
+	itStaffID := uuid.New()
+	itStaffToken, err := auth.SignAccessToken(itStaffID, "it.test@berbagibitesjogja.com", true, "staff", 1, false, cfg.AppConfig.JWTSecret, 15*time.Minute)
 	if err != nil {
-		t.Fatalf("failed to sign staff token: %v", err)
+		t.Fatalf("failed to sign IT staff token: %v", err)
+	}
+
+	// Generate Operational staff token (division_id = 3, is_staff = true)
+	opStaffID := uuid.New()
+	opStaffToken, err := auth.SignAccessToken(opStaffID, "ops.test@berbagibitesjogja.com", true, "staff", 3, false, cfg.AppConfig.JWTSecret, 15*time.Minute)
+	if err != nil {
+		t.Fatalf("failed to sign operational staff token: %v", err)
+	}
+
+	// Generate Super Admin token (role = "super", universal bypass)
+	superAdminID := uuid.New()
+	superAdminToken, err := auth.SignAccessToken(superAdminID, "super.test@berbagibitesjogja.com", true, "super", 1, false, cfg.AppConfig.JWTSecret, 15*time.Minute)
+	if err != nil {
+		t.Fatalf("failed to sign super admin token: %v", err)
 	}
 
 	// Staff-protected endpoints (RequireStaff)
@@ -74,6 +89,35 @@ func TestActorBoundariesInRoutes(t *testing.T) {
 		{http.MethodGet, "/api/v1/heroes/00000000-0000-0000-0000-000000000001/categories"},
 		{http.MethodPost, "/api/v1/heroes/00000000-0000-0000-0000-000000000001/categories"},
 		{http.MethodDelete, "/api/v1/heroes/00000000-0000-0000-0000-000000000001/categories/00000000-0000-0000-0000-000000000001"},
+		{http.MethodPost, "/api/v1/donations"},
+		{http.MethodPatch, "/api/v1/donations/00000000-0000-0000-0000-000000000001"},
+		{http.MethodDelete, "/api/v1/donations/00000000-0000-0000-0000-000000000001"},
+		{http.MethodPost, "/api/v1/donations/00000000-0000-0000-0000-000000000001/publish"},
+		{http.MethodPost, "/api/v1/donations/00000000-0000-0000-0000-000000000001/close"},
+		{http.MethodPost, "/api/v1/donations/00000000-0000-0000-0000-000000000001/reopen"},
+		{http.MethodPost, "/api/v1/donations/00000000-0000-0000-0000-000000000001/complete"},
+		{http.MethodPost, "/api/v1/donations/00000000-0000-0000-0000-000000000001/cancel"},
+	}
+
+	// Operational-specific mutating endpoints (RequireOperationalStaff)
+	operationalEndpoints := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/api/v1/sponsors"},
+		{http.MethodPatch, "/api/v1/sponsors/00000000-0000-0000-0000-000000000001"},
+		{http.MethodDelete, "/api/v1/sponsors/00000000-0000-0000-0000-000000000001"},
+		{http.MethodPost, "/api/v1/food-items"},
+		{http.MethodPatch, "/api/v1/food-items/1"},
+		{http.MethodDelete, "/api/v1/food-items/1"},
+		{http.MethodPost, "/api/v1/donations"},
+		{http.MethodPatch, "/api/v1/donations/00000000-0000-0000-0000-000000000001"},
+		{http.MethodDelete, "/api/v1/donations/00000000-0000-0000-0000-000000000001"},
+		{http.MethodPost, "/api/v1/donations/00000000-0000-0000-0000-000000000001/publish"},
+		{http.MethodPost, "/api/v1/donations/00000000-0000-0000-0000-000000000001/close"},
+		{http.MethodPost, "/api/v1/donations/00000000-0000-0000-0000-000000000001/reopen"},
+		{http.MethodPost, "/api/v1/donations/00000000-0000-0000-0000-000000000001/complete"},
+		{http.MethodPost, "/api/v1/donations/00000000-0000-0000-0000-000000000001/cancel"},
 	}
 
 	t.Run("Hero caller is rejected with 403 Forbidden on all staff endpoints", func(t *testing.T) {
@@ -109,13 +153,61 @@ func TestActorBoundariesInRoutes(t *testing.T) {
 
 	t.Run("Staff caller is rejected with 403 Forbidden on hero-only endpoints", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/heroes/me", nil)
-		req.Header.Set("Authorization", "Bearer "+staffToken)
+		req.Header.Set("Authorization", "Bearer "+itStaffToken)
 		rec := httptest.NewRecorder()
 
 		router.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusForbidden {
 			t.Errorf("expected 403 Forbidden for staff calling GET /api/v1/heroes/me, got %d. Body: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("Non-operational staff (IT staff, division 1) is rejected with 403 on operational mutating endpoints", func(t *testing.T) {
+		for _, ep := range operationalEndpoints {
+			t.Run(fmt.Sprintf("%s %s", ep.method, ep.path), func(t *testing.T) {
+				req := httptest.NewRequest(ep.method, ep.path, nil)
+				req.Header.Set("Authorization", "Bearer "+itStaffToken)
+				rec := httptest.NewRecorder()
+
+				router.ServeHTTP(rec, req)
+
+				if rec.Code != http.StatusForbidden {
+					t.Errorf("expected 403 Forbidden for IT staff on %s %s, got %d. Body: %s", ep.method, ep.path, rec.Code, rec.Body.String())
+				}
+			})
+		}
+	})
+
+	t.Run("Operational staff (division 3) passes authorization on operational mutating endpoints", func(t *testing.T) {
+		for _, ep := range operationalEndpoints {
+			t.Run(fmt.Sprintf("%s %s", ep.method, ep.path), func(t *testing.T) {
+				req := httptest.NewRequest(ep.method, ep.path, nil)
+				req.Header.Set("Authorization", "Bearer "+opStaffToken)
+				rec := httptest.NewRecorder()
+
+				router.ServeHTTP(rec, req)
+
+				if rec.Code == http.StatusForbidden || rec.Code == http.StatusUnauthorized {
+					t.Errorf("unexpected auth rejection %d for Operational staff on %s %s. Body: %s", rec.Code, ep.method, ep.path, rec.Body.String())
+				}
+			})
+		}
+	})
+
+	t.Run("Super admin passes authorization on operational mutating endpoints", func(t *testing.T) {
+		for _, ep := range operationalEndpoints {
+			t.Run(fmt.Sprintf("%s %s", ep.method, ep.path), func(t *testing.T) {
+				req := httptest.NewRequest(ep.method, ep.path, nil)
+				req.Header.Set("Authorization", "Bearer "+superAdminToken)
+				rec := httptest.NewRecorder()
+
+				router.ServeHTTP(rec, req)
+
+				if rec.Code == http.StatusForbidden || rec.Code == http.StatusUnauthorized {
+					t.Errorf("unexpected auth rejection %d for Super Admin on %s %s. Body: %s", rec.Code, ep.method, ep.path, rec.Body.String())
+				}
+			})
 		}
 	})
 }

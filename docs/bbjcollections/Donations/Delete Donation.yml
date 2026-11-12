@@ -1,0 +1,69 @@
+info:
+  name: Delete Donation
+  type: http
+  seq: 10
+
+http:
+  method: DELETE
+  url: "{{base_url}}/donations/:id"
+  params:
+    - name: id
+      value: a753130a-cdad-4e52-9e34-1436f1221093
+      type: path
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: "200"
+    request:
+      url: "{{base_url}}/donations/:id"
+      method: DELETE
+      params:
+        - name: id
+          value: a753130a-cdad-4e52-9e34-1436f1221093
+          type: path
+    response:
+      status: 200
+      statusText: OK
+      headers:
+        - name: access-control-allow-headers
+          value: Content-Type, Authorization, X-Requested-With, Accept, Origin
+        - name: access-control-allow-methods
+          value: GET, POST, PUT, PATCH, DELETE, OPTIONS
+        - name: access-control-allow-origin
+          value: "*"
+        - name: access-control-expose-headers
+          value: Content-Length, Content-Type
+        - name: access-control-max-age
+          value: "86400"
+        - name: content-type
+          value: application/json; charset=utf-8
+        - name: referrer-policy
+          value: strict-origin-when-cross-origin
+        - name: x-content-type-options
+          value: nosniff
+        - name: x-frame-options
+          value: DENY
+        - name: x-request-id
+          value: ref_11e6cfe7
+        - name: x-xss-protection
+          value: 1; mode=block
+        - name: date
+          value: Thu, 12 Nov 2026 07:50:19 GMT
+        - name: content-length
+          value: "116"
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "Donation deleted successfully",
+            "data": {
+              "id": "a753130a-cdad-4e52-9e34-1436f1221093"
+            }
+          }

@@ -38,6 +38,7 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	beneficiaryCategoryHandler := handler.NewBeneficiaryCategoryHandler(routerCfg.Pool, routerCfg.Config)
 	reimbursementHandler := handler.NewReimbursementHandler(routerCfg.Pool, routerCfg.Config)
 	staffHandler := handler.NewStaffHandler(routerCfg.Pool, routerCfg.Config)
+	donationHandler := handler.NewDonationHandler(routerCfg.Pool, routerCfg.Config)
 
 	authMiddleware := middleware.Authenticate(routerCfg.Config.AppConfig.JWTSecret)
 	optionalAuth := middleware.OptionalAuthenticate(routerCfg.Config.AppConfig.JWTSecret)
@@ -46,6 +47,9 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	}
 	heroOnly := func(h http.Handler) http.Handler {
 		return authMiddleware(middleware.RequireHero(h))
+	}
+	operationalOnly := func(h http.Handler) http.Handler {
+		return authMiddleware(middleware.RequireOperationalStaff(routerCfg.Config.AppConfig.DivisionOperational)(h))
 	}
 
 	// Public Auth Endpoints
@@ -88,16 +92,16 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	// Sponsor Endpoints
 	mux.Handle("GET /api/v1/sponsors", optionalAuth(http.HandlerFunc(sponsorHandler.ListSponsorsHandler)))
 	mux.Handle("GET /api/v1/sponsors/{id}", optionalAuth(http.HandlerFunc(sponsorHandler.GetSponsorByIDHandler)))
-	mux.Handle("POST /api/v1/sponsors", staffOnly(http.HandlerFunc(sponsorHandler.CreateSponsorHandler)))
-	mux.Handle("PATCH /api/v1/sponsors/{id}", staffOnly(http.HandlerFunc(sponsorHandler.UpdateSponsorHandler)))
-	mux.Handle("DELETE /api/v1/sponsors/{id}", staffOnly(http.HandlerFunc(sponsorHandler.DeleteSponsorHandler)))
+	mux.Handle("POST /api/v1/sponsors", operationalOnly(http.HandlerFunc(sponsorHandler.CreateSponsorHandler)))
+	mux.Handle("PATCH /api/v1/sponsors/{id}", operationalOnly(http.HandlerFunc(sponsorHandler.UpdateSponsorHandler)))
+	mux.Handle("DELETE /api/v1/sponsors/{id}", operationalOnly(http.HandlerFunc(sponsorHandler.DeleteSponsorHandler)))
 
 	// Food Item Endpoints
 	mux.HandleFunc("GET /api/v1/food-items", foodItemHandler.ListFoodItemsHandler)
 	mux.HandleFunc("GET /api/v1/food-items/{id}", foodItemHandler.GetFoodItemByIDHandler)
-	mux.Handle("POST /api/v1/food-items", staffOnly(http.HandlerFunc(foodItemHandler.CreateFoodItemHandler)))
-	mux.Handle("PATCH /api/v1/food-items/{id}", staffOnly(http.HandlerFunc(foodItemHandler.UpdateFoodItemHandler)))
-	mux.Handle("DELETE /api/v1/food-items/{id}", staffOnly(http.HandlerFunc(foodItemHandler.DeleteFoodItemHandler)))
+	mux.Handle("POST /api/v1/food-items", operationalOnly(http.HandlerFunc(foodItemHandler.CreateFoodItemHandler)))
+	mux.Handle("PATCH /api/v1/food-items/{id}", operationalOnly(http.HandlerFunc(foodItemHandler.UpdateFoodItemHandler)))
+	mux.Handle("DELETE /api/v1/food-items/{id}", operationalOnly(http.HandlerFunc(foodItemHandler.DeleteFoodItemHandler)))
 
 	// Beneficiary Category Endpoints
 	mux.Handle("GET /api/v1/beneficiary-categories", optionalAuth(http.HandlerFunc(beneficiaryCategoryHandler.ListBeneficiaryCategoriesHandler)))
@@ -112,6 +116,20 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	mux.Handle("GET /api/v1/reimbursements/{id}", staffOnly(http.HandlerFunc(reimbursementHandler.GetReimbursementByIDHandler)))
 	mux.Handle("PATCH /api/v1/reimbursements/{id}", staffOnly(http.HandlerFunc(reimbursementHandler.UpdateReimbursementHandler)))
 	mux.Handle("DELETE /api/v1/reimbursements/{id}", staffOnly(http.HandlerFunc(reimbursementHandler.DeleteReimbursementHandler)))
+
+	// Donation Endpoints
+	mux.Handle("GET /api/v1/donations", optionalAuth(http.HandlerFunc(donationHandler.ListDonationsHandler)))
+	mux.Handle("POST /api/v1/donations", operationalOnly(http.HandlerFunc(donationHandler.CreateDonationHandler)))
+	mux.Handle("GET /api/v1/donations/{id}", optionalAuth(http.HandlerFunc(donationHandler.GetDonationByIDHandler)))
+	mux.Handle("PATCH /api/v1/donations/{id}", operationalOnly(http.HandlerFunc(donationHandler.UpdateDonationHandler)))
+	mux.Handle("DELETE /api/v1/donations/{id}", operationalOnly(http.HandlerFunc(donationHandler.DeleteDonationHandler)))
+
+	// Donation Lifecycle Action Endpoints (Mutation: Operational Staff or Super Admin)
+	mux.Handle("POST /api/v1/donations/{id}/publish", operationalOnly(http.HandlerFunc(donationHandler.PublishDonationHandler)))
+	mux.Handle("POST /api/v1/donations/{id}/close", operationalOnly(http.HandlerFunc(donationHandler.CloseDonationHandler)))
+	mux.Handle("POST /api/v1/donations/{id}/reopen", operationalOnly(http.HandlerFunc(donationHandler.ReopenDonationHandler)))
+	mux.Handle("POST /api/v1/donations/{id}/complete", operationalOnly(http.HandlerFunc(donationHandler.CompleteDonationHandler)))
+	mux.Handle("POST /api/v1/donations/{id}/cancel", operationalOnly(http.HandlerFunc(donationHandler.CancelDonationHandler)))
 
 	rateLimit := routerCfg.Config.AppConfig.RateLimit
 	corsMiddleware := middleware.CORSWithConfig(routerCfg.Config.AppConfig.CORSOrigins, routerCfg.Config.AppConfig.CORSMaxAge)
@@ -139,6 +157,6 @@ func HealthCheckHandler(pool *pgxpool.Pool) http.HandlerFunc {
 func APIv1Handler(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]string{
 		"message": "Berbagi Bites Jogja API v1",
-		"version": "0.7.0",
+		"version": "0.8.0",
 	})
 }

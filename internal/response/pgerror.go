@@ -62,6 +62,12 @@ func HandleDBError(w http.ResponseWriter, r *http.Request, err error) bool {
 			fieldErrors["paid_by"] = "Referenced staff member does not exist"
 		case strings.Contains(pgErr.ConstraintName, "user_id"):
 			fieldErrors["user_id"] = "Referenced user does not exist"
+		case strings.Contains(pgErr.ConstraintName, "sponsor"):
+			fieldErrors["sponsor_id"] = "Referenced sponsor does not exist"
+		case strings.Contains(pgErr.ConstraintName, "food_item"):
+			fieldErrors["foods"] = "Referenced food item does not exist"
+		case strings.Contains(pgErr.ConstraintName, "beneficiary_category"):
+			fieldErrors["beneficiary_category_ids"] = "Referenced beneficiary category does not exist"
 		default:
 			fieldErrors["general"] = "Referenced resource does not exist"
 		}
