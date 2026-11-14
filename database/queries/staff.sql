@@ -44,20 +44,6 @@ SET division_id = EXCLUDED.division_id,
     updated_at = NOW()
 RETURNING user_id, division_id, role, created_at, updated_at;
 
--- name: UpdateStaffRole :one
-UPDATE staff
-SET role = $2,
-    updated_at = NOW()
-WHERE user_id = $1 AND deleted_at IS NULL
-RETURNING user_id, division_id, role, updated_at;
-
--- name: UpdateStaffDivision :one
-UPDATE staff
-SET division_id = $2,
-    updated_at = NOW()
-WHERE user_id = $1 AND deleted_at IS NULL
-RETURNING user_id, division_id, role, updated_at;
-
 -- name: UpdateStaffRoleAndDivision :one
 UPDATE staff
 SET role = $2,

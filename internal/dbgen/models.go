@@ -13,6 +13,136 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AttendanceStatus string
+
+const (
+	AttendanceStatusRegistered AttendanceStatus = "registered"
+	AttendanceStatusAttended   AttendanceStatus = "attended"
+	AttendanceStatusAbsent     AttendanceStatus = "absent"
+	AttendanceStatusCancelled  AttendanceStatus = "cancelled"
+)
+
+func (e *AttendanceStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = AttendanceStatus(s)
+	case string:
+		*e = AttendanceStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for AttendanceStatus: %T", src)
+	}
+	return nil
+}
+
+type NullAttendanceStatus struct {
+	AttendanceStatus AttendanceStatus
+	Valid            bool // Valid is true if AttendanceStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullAttendanceStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.AttendanceStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.AttendanceStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullAttendanceStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.AttendanceStatus), nil
+}
+
+type BanReason string
+
+const (
+	BanReasonLateCancellation BanReason = "late_cancellation"
+	BanReasonNoShow           BanReason = "no_show"
+	BanReasonManual           BanReason = "manual"
+)
+
+func (e *BanReason) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = BanReason(s)
+	case string:
+		*e = BanReason(s)
+	default:
+		return fmt.Errorf("unsupported scan type for BanReason: %T", src)
+	}
+	return nil
+}
+
+type NullBanReason struct {
+	BanReason BanReason
+	Valid     bool // Valid is true if BanReason is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullBanReason) Scan(value interface{}) error {
+	if value == nil {
+		ns.BanReason, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.BanReason.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullBanReason) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.BanReason), nil
+}
+
+type BanScope string
+
+const (
+	BanScopeHeroWar  BanScope = "hero_war"
+	BanScopeStaffWar BanScope = "staff_war"
+	BanScopeAll      BanScope = "all"
+)
+
+func (e *BanScope) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = BanScope(s)
+	case string:
+		*e = BanScope(s)
+	default:
+		return fmt.Errorf("unsupported scan type for BanScope: %T", src)
+	}
+	return nil
+}
+
+type NullBanScope struct {
+	BanScope BanScope
+	Valid    bool // Valid is true if BanScope is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullBanScope) Scan(value interface{}) error {
+	if value == nil {
+		ns.BanScope, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.BanScope.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullBanScope) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.BanScope), nil
+}
+
 type DonationStatus string
 
 const (
@@ -355,6 +485,20 @@ type Hero struct {
 	UpdatedAt  time.Time
 }
 
+type HeroAttendance struct {
+	ID            uuid.UUID
+	DonationID    uuid.UUID
+	HeroID        uuid.UUID
+	Status        AttendanceStatus
+	CancelledLate bool
+	CancelledAt   pgtype.Timestamptz
+	AttendedAt    pgtype.Timestamptz
+	MarkedBy      pgtype.UUID
+	Notes         pgtype.Text
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
 type HeroCategory struct {
 	HeroID                uuid.UUID
 	BeneficiaryCategoryID uuid.UUID
@@ -428,6 +572,21 @@ type Staff struct {
 	DeletedAt  pgtype.Timestamptz
 }
 
+type StaffAttendance struct {
+	ID            int64
+	WarSlotID     int64
+	StaffID       uuid.UUID
+	Status        AttendanceStatus
+	CancelledLate bool
+	CancelledAt   pgtype.Timestamptz
+	AttendedAt    pgtype.Timestamptz
+	MarkedBy      pgtype.UUID
+	CheckinSource pgtype.Text
+	Notes         pgtype.Text
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
 type User struct {
 	ID              uuid.UUID
 	Email           string
@@ -443,6 +602,22 @@ type User struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	DeletedAt       pgtype.Timestamptz
+}
+
+type UserBan struct {
+	ID                      int64
+	UserID                  uuid.UUID
+	Scope                   BanScope
+	DonationID              pgtype.UUID
+	DonationCount           int32
+	Reason                  BanReason
+	SourceHeroAttendanceID  pgtype.UUID
+	SourceStaffAttendanceID pgtype.Int8
+	Note                    pgtype.Text
+	CreatedBy               pgtype.UUID
+	LiftedAt                pgtype.Timestamptz
+	LiftedBy                pgtype.UUID
+	CreatedAt               time.Time
 }
 
 type UserInvitation struct {
@@ -468,4 +643,15 @@ type VerificationCode struct {
 	ExpiresAt time.Time
 	UsedAt    pgtype.Timestamptz
 	CreatedAt time.Time
+}
+
+type WarSlot struct {
+	ID         int64
+	DonationID uuid.UUID
+	DivisionID int32
+	Quota      int32
+	Remain     int32
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	DeletedAt  pgtype.Timestamptz
 }

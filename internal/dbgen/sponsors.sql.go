@@ -224,6 +224,20 @@ func (q *Queries) SoftDeleteSponsor(ctx context.Context, id uuid.UUID) (SoftDele
 	return i, err
 }
 
+const sponsorExists = `-- name: SponsorExists :one
+SELECT EXISTS(
+    SELECT 1 FROM sponsors
+    WHERE id = $1 AND deleted_at IS NULL
+)::bool
+`
+
+func (q *Queries) SponsorExists(ctx context.Context, id uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, sponsorExists, id)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const updateSponsor = `-- name: UpdateSponsor :one
 UPDATE sponsors
 SET

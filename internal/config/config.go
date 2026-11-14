@@ -18,6 +18,7 @@ type Config struct {
 	SMTP      SMTPConfig
 	OAuth     OAuthConfig
 	Donation  DonationConfig
+	War       WarConfig
 }
 
 type DBConfig struct {
@@ -101,6 +102,18 @@ type DonationConfig struct {
 	AutoCompleteAfter    time.Duration
 	AutoCompleteInterval time.Duration
 	PastDaysWindow       time.Duration
+}
+
+type WarConfig struct {
+	LateCancellationWindow      time.Duration
+	HeroBanEventCount           int
+	StaffBanEventCount          int
+	HeroCancelGracePeriod       time.Duration
+	StaffCancelGracePeriod      time.Duration
+	HeroAttendanceWindowBefore  time.Duration
+	StaffAttendanceWindowBefore time.Duration
+	StaffSelfCheckInBefore      time.Duration
+	StaffSelfCheckInAfter       time.Duration
 }
 
 func (d DBConfig) DSN() string {
@@ -195,6 +208,17 @@ func LoadConfig() Config {
 			AutoCompleteAfter:    getEnvAsDuration("DONATION_AUTO_COMPLETE_AFTER", 2*time.Hour),
 			AutoCompleteInterval: getEnvAsDuration("DONATION_AUTO_COMPLETE_INTERVAL", 1*time.Hour),
 			PastDaysWindow:       getEnvAsDuration("DONATION_PAST_DAYS_WINDOW", 72*time.Hour),
+		},
+		War: WarConfig{
+			LateCancellationWindow:      getEnvAsDuration("WAR_LATE_CANCELLATION_WINDOW", 12*time.Hour),
+			HeroBanEventCount:           getEnvAsInt("WAR_HERO_BAN_EVENT_COUNT", 2),
+			StaffBanEventCount:          getEnvAsInt("WAR_STAFF_BAN_EVENT_COUNT", 1),
+			HeroCancelGracePeriod:       getEnvAsDuration("WAR_HERO_CANCEL_GRACE_PERIOD", 15*time.Minute),
+			StaffCancelGracePeriod:      getEnvAsDuration("WAR_STAFF_CANCEL_GRACE_PERIOD", 15*time.Minute),
+			HeroAttendanceWindowBefore:  getEnvAsDuration("WAR_HERO_ATTENDANCE_WINDOW_BEFORE", 1*time.Hour),
+			StaffAttendanceWindowBefore: getEnvAsDuration("WAR_STAFF_ATTENDANCE_WINDOW_BEFORE", 1*time.Hour),
+			StaffSelfCheckInBefore:      getEnvAsDuration("WAR_STAFF_SELF_CHECKIN_BEFORE", 1*time.Hour),
+			StaffSelfCheckInAfter:       getEnvAsDuration("WAR_STAFF_SELF_CHECKIN_AFTER", 4*time.Hour),
 		},
 	}
 }

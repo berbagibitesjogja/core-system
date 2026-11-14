@@ -348,15 +348,14 @@ func (h *SponsorHandler) CreateSponsorHandler(w http.ResponseWriter, r *http.Req
 		if err != nil {
 			fieldErrors["logo"] = "Invalid logo file ID format"
 		} else {
-			var fileStatus, storageBucket, mimeType string
-			err = h.pool.QueryRow(r.Context(), "SELECT status, storage_bucket, mime_type FROM files WHERE id = $1", parsedLogo).Scan(&fileStatus, &storageBucket, &mimeType)
+			file, err := h.queries.GetFileByID(r.Context(), parsedLogo)
 			if err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
 					logoNotFound = true
 				} else {
 					logoInvalid = true
 				}
-			} else if fileStatus != "uploaded" || storageBucket != "public" || !strings.HasPrefix(mimeType, "image/") {
+			} else if file.Status != dbgen.FileUploadStatusUploaded || file.StorageBucket != "public" || !strings.HasPrefix(file.MimeType, "image/") {
 				logoInvalid = true
 			} else {
 				logoParam = pgtype.UUID{Bytes: parsedLogo, Valid: true}
@@ -523,15 +522,14 @@ func (h *SponsorHandler) UpdateSponsorHandler(w http.ResponseWriter, r *http.Req
 			if err != nil {
 				fieldErrors["logo"] = "Invalid logo file ID format"
 			} else {
-				var fileStatus, storageBucket, mimeType string
-				err = tx.QueryRow(r.Context(), "SELECT status, storage_bucket, mime_type FROM files WHERE id = $1", parsedLogo).Scan(&fileStatus, &storageBucket, &mimeType)
+				file, err := txQueries.GetFileByID(r.Context(), parsedLogo)
 				if err != nil {
 					if errors.Is(err, pgx.ErrNoRows) {
 						updateLogoNotFound = true
 					} else {
 						updateLogoInvalid = true
 					}
-				} else if fileStatus != "uploaded" || storageBucket != "public" || !strings.HasPrefix(mimeType, "image/") {
+				} else if file.Status != dbgen.FileUploadStatusUploaded || file.StorageBucket != "public" || !strings.HasPrefix(file.MimeType, "image/") {
 					updateLogoInvalid = true
 				} else {
 					logo = pgtype.UUID{Bytes: parsedLogo, Valid: true}
@@ -615,4 +613,3 @@ func (h *SponsorHandler) DeleteSponsorHandler(w http.ResponseWriter, r *http.Req
 		"id": row.ID.String(),
 	})
 }
-

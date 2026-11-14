@@ -97,6 +97,8 @@ func TestActorBoundariesInRoutes(t *testing.T) {
 		{http.MethodPost, "/api/v1/donations/00000000-0000-0000-0000-000000000001/reopen"},
 		{http.MethodPost, "/api/v1/donations/00000000-0000-0000-0000-000000000001/complete"},
 		{http.MethodPost, "/api/v1/donations/00000000-0000-0000-0000-000000000001/cancel"},
+		{http.MethodPatch, "/api/v1/donations/00000000-0000-0000-0000-000000000001/war-slots/1"},
+		{http.MethodDelete, "/api/v1/donations/00000000-0000-0000-0000-000000000001/war-slots/1"},
 	}
 
 	// Operational-specific mutating endpoints (RequireOperationalStaff)
@@ -118,6 +120,8 @@ func TestActorBoundariesInRoutes(t *testing.T) {
 		{http.MethodPost, "/api/v1/donations/00000000-0000-0000-0000-000000000001/reopen"},
 		{http.MethodPost, "/api/v1/donations/00000000-0000-0000-0000-000000000001/complete"},
 		{http.MethodPost, "/api/v1/donations/00000000-0000-0000-0000-000000000001/cancel"},
+		{http.MethodPatch, "/api/v1/donations/00000000-0000-0000-0000-000000000001/war-slots/1"},
+		{http.MethodDelete, "/api/v1/donations/00000000-0000-0000-0000-000000000001/war-slots/1"},
 	}
 
 	t.Run("Hero caller is rejected with 403 Forbidden on all staff endpoints", func(t *testing.T) {

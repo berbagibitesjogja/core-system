@@ -21,7 +21,7 @@ http:
       //   "sponsor_id"?: UUID
       //   "event_at"?: YYYY-MM-DDTHH:MM:SS
       //   "quota"?: int > 0
-      //   "hero_quota"?: int >= 0 and <= quota
+      //   "hero_quota"?: int
       //   "address"?: max 500
       //   "maps"?: string URL
       //   "message"?: string
@@ -64,7 +64,7 @@ examples:
           //   "sponsor_id"?: UUID
           //   "event_at"?: YYYY-MM-DDTHH:MM:SS
           //   "quota"?: int > 0
-          //   "hero_quota"?: int >= 0 and <= quota
+          //   "hero_quota"?: int >= active reservations and <= quota
           //   "address"?: max 500
           //   "maps"?: string URL
           //   "message"?: string
@@ -136,4 +136,33 @@ examples:
                 }
               ]
             }
+          }
+
+  - name: "409"
+    request:
+      url: "{{base_url}}/donations/:id"
+      method: PATCH
+      params:
+        - name: id
+          value: 08167a2b-fcc2-480d-873d-9f94ef08762e
+          type: path
+      body:
+        type: json
+        data: |-
+          {
+            "hero_quota": 5
+          }
+    response:
+      status: 409
+      statusText: Conflict
+      headers:
+        - name: content-type
+          value: application/json; charset=utf-8
+      body:
+        type: json
+        data: |-
+          {
+            "status": "error",
+            "message": "New hero quota (5) cannot be less than active reservations (10)",
+            "code": "QUOTA_BELOW_ACTIVE_CLAIMS"
           }

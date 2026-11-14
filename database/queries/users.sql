@@ -83,3 +83,15 @@ UPDATE users
 SET password_hash = NULL,
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: UserExists :one
+SELECT EXISTS(
+    SELECT 1 FROM users
+    WHERE id = $1 AND deleted_at IS NULL
+)::bool;
+
+-- name: GetUserBanTargetProfiles :one
+SELECT
+    EXISTS(SELECT 1 FROM users WHERE id = $1 AND deleted_at IS NULL)::bool AS user_exists,
+    EXISTS(SELECT 1 FROM heroes WHERE user_id = $1)::bool AS is_hero,
+    EXISTS(SELECT 1 FROM staff WHERE user_id = $1 AND deleted_at IS NULL)::bool AS is_staff;

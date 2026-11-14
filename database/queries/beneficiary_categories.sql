@@ -70,3 +70,9 @@ WHERE variant = 'university'
   )
 ORDER BY LENGTH(email_domain) DESC
 LIMIT 1;
+
+-- name: ListBeneficiaryCategoryVariantsByIDs :many
+SELECT id, variant
+FROM beneficiary_categories
+WHERE id = ANY($1::uuid[])
+  AND deleted_at IS NULL;

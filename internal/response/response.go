@@ -124,8 +124,22 @@ func Forbidden(w http.ResponseWriter, r *http.Request, message string) {
 	ErrorWithRequest(w, r, http.StatusForbidden, "FORBIDDEN", message, nil)
 }
 
+func ForbiddenWithCode(w http.ResponseWriter, r *http.Request, code, message string) {
+	if code == "" {
+		code = "FORBIDDEN"
+	}
+	ErrorWithRequest(w, r, http.StatusForbidden, code, message, nil)
+}
+
 func NotFound(w http.ResponseWriter, r *http.Request, message string) {
 	ErrorWithRequest(w, r, http.StatusNotFound, "NOT_FOUND", message, nil)
+}
+
+func Conflict(w http.ResponseWriter, r *http.Request, code, message string) {
+	if code == "" {
+		code = "CONFLICT"
+	}
+	ErrorWithRequest(w, r, http.StatusConflict, code, message, nil)
 }
 
 func TooManyRequests(w http.ResponseWriter, r *http.Request, message string) {

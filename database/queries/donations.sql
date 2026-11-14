@@ -17,12 +17,6 @@ INSERT INTO donations (
 )
 RETURNING id, sponsor_id, created_by, event_at, quota, hero_quota, remain, address, maps, message, status, hide_from_public, hide_sponsor, created_at, updated_at, deleted_at;
 
--- name: GetDonationByID :one
-SELECT id, sponsor_id, created_by, event_at, quota, hero_quota, remain, address, maps, message, status, hide_from_public, hide_sponsor, created_at, updated_at, deleted_at
-FROM donations
-WHERE id = $1 AND deleted_at IS NULL
-LIMIT 1;
-
 -- name: GetDonationByIDForUpdate :one
 SELECT id, sponsor_id, created_by, event_at, quota, hero_quota, remain, address, maps, message, status, hide_from_public, hide_sponsor, created_at, updated_at, deleted_at
 FROM donations
@@ -175,3 +169,9 @@ WHERE deleted_at IS NULL
   AND (status = 'open' OR status = 'closed')
   AND event_at <= $1
 RETURNING id;
+
+-- name: DonationExists :one
+SELECT EXISTS(
+    SELECT 1 FROM donations
+    WHERE id = $1 AND deleted_at IS NULL
+)::bool;

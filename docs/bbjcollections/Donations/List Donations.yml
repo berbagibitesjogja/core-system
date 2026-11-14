@@ -5,7 +5,7 @@ info:
 
 http:
   method: GET
-  url: "{{base_url}}/donations?page=1&limit=10&status=&search="
+  url: "{{base_url}}/donations?page=1&limit=10&status=open&search="
   params:
     - name: page
       value: "1"
@@ -14,7 +14,7 @@ http:
       value: "10"
       type: query
     - name: status
-      value: ""
+      value: open
       type: query
     - name: search
       value: ""
@@ -28,7 +28,7 @@ settings:
   maxRedirects: 5
 
 examples:
-  - name: "200 Public (Hero / Public)"
+  - name: 200 Public (Hero / Public)
     request:
       url: "{{base_url}}/donations?page=1&limit=10&status=open&search="
       method: GET
@@ -40,7 +40,7 @@ examples:
           value: "10"
           type: query
         - name: status
-          value: "open"
+          value: open
           type: query
         - name: search
           value: ""
@@ -97,7 +97,7 @@ examples:
               "total_pages": 1
             }
           }
-  - name: "200 Staff (Backoffice)"
+  - name: 200 Staff (Backoffice)
     request:
       url: "{{base_url}}/donations?page=1&limit=10&status=&search="
       method: GET

@@ -1,0 +1,103 @@
+info:
+  name: List War Slots
+  type: http
+  seq: 1
+
+http:
+  method: GET
+  url: "{{base_url}}/donations/:donationId/war-slots"
+  params:
+    - name: donationId
+      value: 00000000-0000-0000-0000-000000002002
+      type: path
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: "200"
+    request:
+      url: "{{base_url}}/donations/:donationId/war-slots"
+      method: GET
+      params:
+        - name: donationId
+          value: 00000000-0000-0000-0000-000000002002
+          type: path
+    response:
+      status: 200
+      statusText: OK
+      headers:
+        - name: access-control-allow-headers
+          value: Content-Type, Authorization, X-Requested-With, Accept, Origin
+        - name: access-control-allow-methods
+          value: GET, POST, PUT, PATCH, DELETE, OPTIONS
+        - name: access-control-allow-origin
+          value: "*"
+        - name: access-control-expose-headers
+          value: Content-Length, Content-Type
+        - name: access-control-max-age
+          value: "86400"
+        - name: content-type
+          value: application/json; charset=utf-8
+        - name: referrer-policy
+          value: strict-origin-when-cross-origin
+        - name: x-content-type-options
+          value: nosniff
+        - name: x-frame-options
+          value: DENY
+        - name: x-request-id
+          value: ref_cbfcf1e7
+        - name: x-xss-protection
+          value: 1; mode=block
+        - name: date
+          value: Sat, 14 Nov 2026 05:26:17 GMT
+        - name: content-length
+          value: "813"
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "War slots retrieved successfully",
+            "data": [
+              {
+                "id": 1,
+                "donation_id": "00000000-0000-0000-0000-000000002002",
+                "division_id": 1,
+                "division_name": "IT",
+                "quota": 2,
+                "remain": 1,
+                "active_claims": 1,
+                "volunteers": [
+                  {
+                    "id": 1,
+                    "staff_id": "00000000-0000-0000-0000-000000000001",
+                    "staff_name": "Tim IT",
+                    "staff_email": "it@berbagibitesjogja.com",
+                    "status": "registered",
+                    "checkin_source": null,
+                    "attended_at": null,
+                    "created_at": "2026-11-14T12:25:48.545555+07:00"
+                  }
+                ],
+                "created_at": "2026-11-14T12:08:53.45243+07:00",
+                "updated_at": "2026-11-14T12:25:48.545555+07:00"
+              },
+              {
+                "id": 2,
+                "donation_id": "00000000-0000-0000-0000-000000002002",
+                "division_id": 3,
+                "division_name": "Operational",
+                "quota": 3,
+                "remain": 3,
+                "active_claims": 0,
+                "volunteers": [],
+                "created_at": "2026-11-14T12:08:53.45243+07:00",
+                "updated_at": "2026-11-14T12:08:53.45243+07:00"
+              }
+            ]
+          }

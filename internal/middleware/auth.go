@@ -121,6 +121,31 @@ func RequireOperationalStaff(divisionOperational int32) func(next http.Handler) 
 	}
 }
 
+func RequireCoreStaff(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := GetClaims(r.Context())
+		if !ok || claims == nil {
+			response.SetError(r.Context(), errors.New("authentication required"))
+			response.Unauthorized(w, r, "Authentication required")
+			return
+		}
+
+		if !claims.IsStaff {
+			response.SetError(r.Context(), errors.New("insufficient permissions: staff access required"))
+			response.Forbidden(w, r, "Staff access required")
+			return
+		}
+
+		if claims.Role != "super" && claims.Role != "core" {
+			response.SetError(r.Context(), errors.New("insufficient permissions: core or super admin access required"))
+			response.Forbidden(w, r, "Core or super admin access required")
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 func RequireHero(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := GetClaims(r.Context())

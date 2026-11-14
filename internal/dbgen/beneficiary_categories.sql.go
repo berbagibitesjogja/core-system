@@ -170,6 +170,38 @@ func (q *Queries) ListBeneficiaryCategories(ctx context.Context, arg ListBenefic
 	return items, nil
 }
 
+const listBeneficiaryCategoryVariantsByIDs = `-- name: ListBeneficiaryCategoryVariantsByIDs :many
+SELECT id, variant
+FROM beneficiary_categories
+WHERE id = ANY($1::uuid[])
+  AND deleted_at IS NULL
+`
+
+type ListBeneficiaryCategoryVariantsByIDsRow struct {
+	ID      uuid.UUID
+	Variant string
+}
+
+func (q *Queries) ListBeneficiaryCategoryVariantsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]ListBeneficiaryCategoryVariantsByIDsRow, error) {
+	rows, err := q.db.Query(ctx, listBeneficiaryCategoryVariantsByIDs, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListBeneficiaryCategoryVariantsByIDsRow
+	for rows.Next() {
+		var i ListBeneficiaryCategoryVariantsByIDsRow
+		if err := rows.Scan(&i.ID, &i.Variant); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const matchUniversityCategoryByEmailDomain = `-- name: MatchUniversityCategoryByEmailDomain :one
 SELECT id, name, address, maps, variant, email_domain, is_priority, hidden, created_at, updated_at
 FROM beneficiary_categories

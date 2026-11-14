@@ -43,6 +43,20 @@ func (q *Queries) DeleteTargetsByDonationID(ctx context.Context, donationID uuid
 	return err
 }
 
+const hasDonationTargets = `-- name: HasDonationTargets :one
+SELECT EXISTS(
+    SELECT 1 FROM donation_target
+    WHERE donation_id = $1
+)::bool
+`
+
+func (q *Queries) HasDonationTargets(ctx context.Context, donationID uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, hasDonationTargets, donationID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const listTargetsByDonationID = `-- name: ListTargetsByDonationID :many
 SELECT
     dt.donation_id,

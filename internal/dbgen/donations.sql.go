@@ -166,35 +166,18 @@ func (q *Queries) CreateDonation(ctx context.Context, arg CreateDonationParams) 
 	return i, err
 }
 
-const getDonationByID = `-- name: GetDonationByID :one
-SELECT id, sponsor_id, created_by, event_at, quota, hero_quota, remain, address, maps, message, status, hide_from_public, hide_sponsor, created_at, updated_at, deleted_at
-FROM donations
-WHERE id = $1 AND deleted_at IS NULL
-LIMIT 1
+const donationExists = `-- name: DonationExists :one
+SELECT EXISTS(
+    SELECT 1 FROM donations
+    WHERE id = $1 AND deleted_at IS NULL
+)::bool
 `
 
-func (q *Queries) GetDonationByID(ctx context.Context, id uuid.UUID) (Donation, error) {
-	row := q.db.QueryRow(ctx, getDonationByID, id)
-	var i Donation
-	err := row.Scan(
-		&i.ID,
-		&i.SponsorID,
-		&i.CreatedBy,
-		&i.EventAt,
-		&i.Quota,
-		&i.HeroQuota,
-		&i.Remain,
-		&i.Address,
-		&i.Maps,
-		&i.Message,
-		&i.Status,
-		&i.HideFromPublic,
-		&i.HideSponsor,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.DeletedAt,
-	)
-	return i, err
+func (q *Queries) DonationExists(ctx context.Context, id uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, donationExists, id)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const getDonationByIDForUpdate = `-- name: GetDonationByIDForUpdate :one

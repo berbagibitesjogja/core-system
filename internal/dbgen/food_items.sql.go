@@ -24,6 +24,19 @@ func (q *Queries) CountFoodItems(ctx context.Context, search pgtype.Text) (int64
 	return count, err
 }
 
+const countFoodItemsByIDs = `-- name: CountFoodItemsByIDs :one
+SELECT COUNT(*)
+FROM food_items
+WHERE id = ANY($1::int[])
+`
+
+func (q *Queries) CountFoodItemsByIDs(ctx context.Context, dollar_1 []int32) (int64, error) {
+	row := q.db.QueryRow(ctx, countFoodItemsByIDs, dollar_1)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createFoodItem = `-- name: CreateFoodItem :one
 INSERT INTO food_items (
     name

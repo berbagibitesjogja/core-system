@@ -1,0 +1,110 @@
+info:
+  name: Mark Hero Attendance
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{base_url}}/donations/:donationId/attendances/:attendanceId"
+  params:
+    - name: attendanceId
+      value: 9790fa54-ecec-48dd-94e0-08ecf81520e7
+      type: path
+    - name: donationId
+      value: 00000000-0000-0000-0000-000000002002
+      type: path
+  body:
+    type: json
+    data: |-
+      {
+        "status": "attended",
+        "notes": "Verified present on site"
+      }
+
+      // {
+      //   status: attended, absent
+      //   notes?: string
+      // }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: 200 Attended
+    request:
+      url: "{{base_url}}/donations/1f7f017a-70d2-42d1-8657-19563041b95b/attendances/795e89d7-8eb4-4027-9e92-0e83c17b1be2"
+      method: POST
+      body:
+        type: json
+        data: |-
+          {
+            "status": "attended",
+            "notes": "Verified present on site"
+          }
+    response:
+      status: 200
+      statusText: OK
+      headers:
+        - name: content-type
+          value: application/json; charset=utf-8
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "Attendance marked successfully",
+            "data": {
+              "id": "795e89d7-8eb4-4027-9e92-0e83c17b1be2",
+              "donation_id": "1f7f017a-70d2-42d1-8657-19563041b95b",
+              "hero_id": "00000000-0000-0000-0000-000000000101",
+              "status": "attended",
+              "cancelled_late": false,
+              "cancelled_at": null,
+              "attended_at": "2026-11-13T07:44:00.000000+07:00",
+              "marked_by": "00000000-0000-0000-0000-000000000006",
+              "notes": "Verified present on site",
+              "created_at": "2026-11-13T07:42:04.834324+07:00",
+              "updated_at": "2026-11-13T07:44:00.000000+07:00"
+            }
+          }
+  - name: 200 Absent (Banned)
+    request:
+      url: "{{base_url}}/donations/1f7f017a-70d2-42d1-8657-19563041b95b/attendances/795e89d7-8eb4-4027-9e92-0e83c17b1be2"
+      method: POST
+      body:
+        type: json
+        data: |-
+          {
+            "status": "absent",
+            "notes": "No show without notice"
+          }
+    response:
+      status: 200
+      statusText: OK
+      headers:
+        - name: content-type
+          value: application/json; charset=utf-8
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "Attendance marked successfully",
+            "data": {
+              "id": "795e89d7-8eb4-4027-9e92-0e83c17b1be2",
+              "donation_id": "1f7f017a-70d2-42d1-8657-19563041b95b",
+              "hero_id": "00000000-0000-0000-0000-000000000101",
+              "status": "absent",
+              "cancelled_late": false,
+              "cancelled_at": null,
+              "attended_at": null,
+              "marked_by": "00000000-0000-0000-0000-000000000006",
+              "notes": "No show without notice",
+              "created_at": "2026-11-13T07:42:04.834324+07:00",
+              "updated_at": "2026-11-13T07:44:00.000000+07:00"
+            }
+          }

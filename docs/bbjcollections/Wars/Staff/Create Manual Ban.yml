@@ -1,0 +1,79 @@
+info:
+  name: Create Manual Ban
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{base_url}}/users/:id/bans"
+  params:
+    - name: id
+      value: 00000000-0000-0000-0000-000000000101
+      type: path
+  body:
+    type: json
+    data: |-
+      {
+        "scope": "hero_war",
+        "donation_count": 2,
+        "note": "Disciplined for policy violation"
+      }
+
+      // {
+      // scope: hero_war, staff_war, all
+      // donation_count: int
+      // note: string
+      // }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: 201 Created
+    request:
+      url: "{{base_url}}/users/00000000-0000-0000-0000-000000000101/bans"
+      method: POST
+      params:
+        - name: id
+          value: 00000000-0000-0000-0000-000000000101
+          type: path
+      body:
+        type: json
+        data: |-
+          {
+            "scope": "hero_war",
+            "donation_count": 2,
+            "note": "Disciplined for policy violation"
+          }
+    response:
+      status: 201
+      statusText: Created
+      headers:
+        - name: content-type
+          value: application/json; charset=utf-8
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "Manual ban created successfully",
+            "data": {
+              "id": 1,
+              "user_id": "00000000-0000-0000-0000-000000000101",
+              "scope": "hero_war",
+              "donation_id": null,
+              "donation_count": 2,
+              "reason": "manual",
+              "source_hero_attendance_id": null,
+              "source_staff_attendance_id": null,
+              "note": "Disciplined for policy violation",
+              "lifted_at": null,
+              "lifted_by": null,
+              "created_at": "2026-11-13T08:26:00.000000+07:00",
+              "created_by": "00000000-0000-0000-0000-000000000006"
+            }
+          }

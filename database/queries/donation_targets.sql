@@ -34,3 +34,9 @@ ORDER BY bc.name ASC;
 -- name: DeleteTargetsByDonationID :exec
 DELETE FROM donation_target
 WHERE donation_id = $1;
+
+-- name: HasDonationTargets :one
+SELECT EXISTS(
+    SELECT 1 FROM donation_target
+    WHERE donation_id = $1
+)::bool;

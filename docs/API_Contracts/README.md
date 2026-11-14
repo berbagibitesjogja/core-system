@@ -15,3 +15,5 @@ This directory contains the official API specifications, data models, role guard
 | **Food Items** | [`FoodItems.md`](./FoodItems.md) | Food inventory, categories, expiration tracking, and stock management |
 | **Donations** | [`Donations.md`](./Donations.md) | Food distribution events, quota allocation, hero claims, lifecycle transitions, and privacy masking |
 | **Reimbursements** | [`Reimbursements.md`](./Reimbursements.md) | Operational expense claims, receipt file attachments, and payment approvals |
+| **Donation Wars & Staff Shifts** | [`Wars.md`](./Wars.md) | Hero reservation war claims/cancellations, division shift slot CRUD, staff shift claims/cancellations, and staff self check-in |
+| **Attendance & Bans** | [`AttendanceAndBans.md`](./AttendanceAndBans.md) | Hero and staff attendance tracking, unmarked filtering, automated/manual suspension governance, and coordinator pardons |
