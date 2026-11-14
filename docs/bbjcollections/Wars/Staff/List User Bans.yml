@@ -1,0 +1,85 @@
+info:
+  name: List User Bans
+  type: http
+  seq: 1
+
+http:
+  method: GET
+  url: "{{base_url}}/users/:userId/bans?page=1&limit=20"
+  params:
+    - name: page
+      value: "1"
+      type: query
+    - name: limit
+      value: "20"
+      type: query
+    - name: scope
+      value: hero_war
+      type: query
+      disabled: true
+    - name: active_only
+      value: "true"
+      type: query
+      disabled: true
+    - name: userId
+      value: "00000000-0000-0000-0000-000000000101"
+      type: path
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: 200 OK
+    request:
+      url: "{{base_url}}/users/:userId/bans?page=1&limit=20"
+      method: GET
+      params:
+        - name: page
+          value: "1"
+          type: query
+        - name: limit
+          value: "20"
+          type: query
+        - name: userId
+          value: "00000000-0000-0000-0000-000000000101"
+          type: path
+    response:
+      status: 200
+      statusText: OK
+      headers:
+        - name: content-type
+          value: application/json; charset=utf-8
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "User bans retrieved successfully",
+            "data": [
+              {
+                "id": 72,
+                "user_id": "00000000-0000-0000-0000-000000000101",
+                "scope": "hero_war",
+                "donation_id": "1f7f017a-70d2-42d1-8657-19563041b95b",
+                "donation_count": 2,
+                "reason": "no_show",
+                "source_hero_attendance_id": "795e89d7-8eb4-4027-9e92-0e83c17b1be2",
+                "source_staff_attendance_id": null,
+                "note": null,
+                "created_by": null,
+                "lifted_at": null,
+                "lifted_by": null,
+                "created_at": "2026-11-13T07:42:04.929589+07:00"
+              }
+            ],
+            "meta": {
+              "page": 1,
+              "limit": 20,
+              "total": 1,
+              "total_pages": 1
+            }
+          }

@@ -549,8 +549,7 @@ func (h *DonationHandler) CreateDonationHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	var sponsorActive bool
-	err := h.pool.QueryRow(r.Context(), "SELECT EXISTS(SELECT 1 FROM sponsors WHERE id = $1 AND deleted_at IS NULL)", sponsorUUID).Scan(&sponsorActive)
+	sponsorActive, err := h.queries.SponsorExists(r.Context(), sponsorUUID)
 	if err != nil || !sponsorActive {
 		response.BadRequest(w, r, "VAL_002", "Validation failed", map[string]string{
 			"sponsor_id": "Referenced sponsor does not exist or has been deleted",
@@ -562,9 +561,8 @@ func (h *DonationHandler) CreateDonationHandler(w http.ResponseWriter, r *http.R
 	for _, f := range req.Foods {
 		foodItemIDs = append(foodItemIDs, f.FoodItemID)
 	}
-	var foodCount int
-	err = h.pool.QueryRow(r.Context(), "SELECT COUNT(*) FROM food_items WHERE id = ANY($1)", foodItemIDs).Scan(&foodCount)
-	if err != nil || foodCount != len(foodItemIDs) {
+	foodCount, err := h.queries.CountFoodItemsByIDs(r.Context(), foodItemIDs)
+	if err != nil || int(foodCount) != len(foodItemIDs) {
 		response.BadRequest(w, r, "VAL_002", "Validation failed", map[string]string{
 			"foods": "One or more referenced food items do not exist",
 		})
@@ -578,33 +576,20 @@ func (h *DonationHandler) CreateDonationHandler(w http.ResponseWriter, r *http.R
 	}
 
 	hasHeroVariant := false
-	foundCatCount := 0
 	if len(targetUUIDs) > 0 {
-		rows, err := h.pool.Query(r.Context(), "SELECT id, variant FROM beneficiary_categories WHERE id = ANY($1) AND deleted_at IS NULL", targetUUIDs)
+		cats, err := h.queries.ListBeneficiaryCategoryVariantsByIDs(r.Context(), targetUUIDs)
 		if err != nil {
 			response.InternalServerError(w, r, err, "Failed to verify beneficiary categories")
 			return
 		}
-		defer rows.Close()
 
-		for rows.Next() {
-			var id uuid.UUID
-			var variant string
-			if err := rows.Scan(&id, &variant); err != nil {
-				response.InternalServerError(w, r, err, "Failed to scan beneficiary categories")
-				return
-			}
-			foundCatCount++
-			if variant == "university" || variant == "kipk" {
+		for _, cat := range cats {
+			if cat.Variant == "university" || cat.Variant == "kipk" {
 				hasHeroVariant = true
 			}
 		}
-		if err := rows.Err(); err != nil {
-			response.InternalServerError(w, r, err, "Failed to iterate beneficiary categories")
-			return
-		}
 
-		if foundCatCount != len(targetUUIDs) {
+		if len(cats) != len(targetUUIDs) {
 			response.BadRequest(w, r, "VAL_002", "Validation failed", map[string]string{
 				"beneficiary_category_ids": "One or more referenced beneficiary categories do not exist or have been deleted",
 			})
@@ -829,15 +814,26 @@ func (h *DonationHandler) UpdateDonationHandler(w http.ResponseWriter, r *http.R
 	finalRemain := current.Remain
 	if req.HeroQuota != nil {
 		newHero := int32(*req.HeroQuota)
-		delta := newHero - current.HeroQuota
-		finalRemain = current.Remain + delta
-		if finalRemain < 0 {
+		if newHero < 0 {
 			response.BadRequest(w, r, "VAL_001", "Validation failed", map[string]string{
-				"hero_quota": "New hero quota would drop remaining spots below zero",
+				"hero_quota": "Hero quota cannot be negative",
 			})
 			return
 		}
+
+		activeClaims, err := txQueries.CountActiveHeroClaimsByDonation(r.Context(), donationUUID)
+		if err != nil {
+			response.InternalServerError(w, r, err, "Failed to count active hero claims")
+			return
+		}
+
+		if newHero < activeClaims {
+			response.Conflict(w, r, "QUOTA_BELOW_ACTIVE_CLAIMS", fmt.Sprintf("New hero quota (%d) cannot be less than active reservations (%d)", newHero, activeClaims))
+			return
+		}
+
 		finalHeroQuota = newHero
+		finalRemain = newHero - activeClaims
 	}
 
 	if finalHeroQuota > finalQuota {
@@ -859,22 +855,11 @@ func (h *DonationHandler) UpdateDonationHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	heroQuotaChanged := req.HeroQuota != nil && finalHeroQuota != current.HeroQuota
 	finalStatus := current.Status
-	if heroQuotaChanged {
-		if current.Status == dbgen.DonationStatusOpen && finalRemain == 0 {
-			finalStatus = dbgen.DonationStatusClosed
-		} else if current.Status == dbgen.DonationStatusClosed && finalRemain > 0 {
-			if finalEventAt.After(time.Now()) {
-				finalStatus = dbgen.DonationStatusOpen
-			}
-		}
-	}
 
 	finalSponsorID := current.SponsorID
 	if sponsorUUID != nil {
-		var sponsorActive bool
-		err = tx.QueryRow(r.Context(), "SELECT EXISTS(SELECT 1 FROM sponsors WHERE id = $1 AND deleted_at IS NULL)", *sponsorUUID).Scan(&sponsorActive)
+		sponsorActive, err := txQueries.SponsorExists(r.Context(), *sponsorUUID)
 		if err != nil || !sponsorActive {
 			response.BadRequest(w, r, "VAL_002", "Validation failed", map[string]string{
 				"sponsor_id": "Referenced sponsor does not exist or has been deleted",
@@ -920,33 +905,20 @@ func (h *DonationHandler) UpdateDonationHandler(w http.ResponseWriter, r *http.R
 		}
 
 		hasHeroVariant := false
-		foundCatCount := 0
 		if len(targetUUIDs) > 0 {
-			rows, err := tx.Query(r.Context(), "SELECT id, variant FROM beneficiary_categories WHERE id = ANY($1) AND deleted_at IS NULL", targetUUIDs)
+			cats, err := txQueries.ListBeneficiaryCategoryVariantsByIDs(r.Context(), targetUUIDs)
 			if err != nil {
 				response.InternalServerError(w, r, err, "Failed to verify beneficiary categories")
 				return
 			}
-			defer rows.Close()
 
-			for rows.Next() {
-				var id uuid.UUID
-				var variant string
-				if err := rows.Scan(&id, &variant); err != nil {
-					response.InternalServerError(w, r, err, "Failed to scan beneficiary categories")
-					return
-				}
-				foundCatCount++
-				if variant == "university" || variant == "kipk" {
+			for _, cat := range cats {
+				if cat.Variant == "university" || cat.Variant == "kipk" {
 					hasHeroVariant = true
 				}
 			}
-			if err := rows.Err(); err != nil {
-				response.InternalServerError(w, r, err, "Failed to iterate beneficiary categories")
-				return
-			}
 
-			if foundCatCount != len(targetUUIDs) {
+			if len(cats) != len(targetUUIDs) {
 				response.BadRequest(w, r, "VAL_002", "Validation failed", map[string]string{
 					"beneficiary_category_ids": "One or more referenced beneficiary categories do not exist or have been deleted",
 				})
@@ -1000,9 +972,8 @@ func (h *DonationHandler) UpdateDonationHandler(w http.ResponseWriter, r *http.R
 		for _, f := range req.Foods {
 			foodItemIDs = append(foodItemIDs, f.FoodItemID)
 		}
-		var foodCount int
-		err = tx.QueryRow(r.Context(), "SELECT COUNT(*) FROM food_items WHERE id = ANY($1)", foodItemIDs).Scan(&foodCount)
-		if err != nil || foodCount != len(foodItemIDs) {
+		foodCount, err := txQueries.CountFoodItemsByIDs(r.Context(), foodItemIDs)
+		if err != nil || int(foodCount) != len(foodItemIDs) {
 			response.BadRequest(w, r, "VAL_002", "Validation failed", map[string]string{
 				"foods": "One or more referenced food items do not exist",
 			})
@@ -1120,19 +1091,12 @@ func (h *DonationHandler) PublishDonationHandler(w http.ResponseWriter, r *http.
 		return
 	}
 
-	var sponsorDeletedAt pgtype.Timestamptz
-	err = tx.QueryRow(r.Context(), "SELECT deleted_at FROM sponsors WHERE id = $1", donation.SponsorID).Scan(&sponsorDeletedAt)
+	sponsorActive, err := txQueries.SponsorExists(r.Context(), donation.SponsorID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			response.BadRequest(w, r, "VAL_002", "Sponsor has been deleted", map[string]string{
-				"sponsor_id": "Sponsor has been deleted",
-			})
-			return
-		}
 		response.InternalServerError(w, r, err, "Failed to verify sponsor")
 		return
 	}
-	if sponsorDeletedAt.Valid {
+	if !sponsorActive {
 		response.BadRequest(w, r, "VAL_002", "Sponsor has been deleted", map[string]string{
 			"sponsor_id": "Sponsor has been deleted",
 		})
@@ -1185,9 +1149,6 @@ func (h *DonationHandler) PublishDonationHandler(w http.ResponseWriter, r *http.
 	}
 
 	targetStatus := dbgen.DonationStatusOpen
-	if donation.HeroQuota > 0 && donation.Remain == 0 {
-		targetStatus = dbgen.DonationStatusClosed
-	}
 
 	if _, err := txQueries.UpdateDonationStatus(r.Context(), dbgen.UpdateDonationStatusParams{
 		ID:     donationUUID,
@@ -1448,6 +1409,12 @@ func (h *DonationHandler) CancelDonationHandler(w http.ResponseWriter, r *http.R
 		Status: dbgen.DonationStatusCancelled,
 	}); err != nil {
 		response.InternalServerError(w, r, err, "Failed to cancel donation")
+		return
+	}
+
+	err = txQueries.AutoLiftSystemBansByDonation(r.Context(), pgtype.UUID{Bytes: donationUUID, Valid: true})
+	if err != nil {
+		response.InternalServerError(w, r, err, "Failed to auto-lift user bans for cancelled donation")
 		return
 	}
 

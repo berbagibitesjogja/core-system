@@ -308,10 +308,11 @@ Creates a new food distribution event in `draft` status.
 Performs a safe partial update (`PATCH`) on a donation record. Fields omitted from the payload retain their existing values.
 - **State Guardrail:** Terminal states (`completed`, `cancelled`) are strictly immutable (`400 VAL_001`).
 - **Past Date Guardrail:** When an `open` donation is updated, setting `event_at` to the past is rejected (`400 VAL_001`).
-- **Isolated Status Transitions:** Status changes occur strictly when `hero_quota` changed:
-  - If lowering `hero_quota` drops `remain` to `0` on an `open` donation, status becomes `closed`.
-  - If increasing `hero_quota` on a `closed` donation results in `remain > 0` and `event_at` is in the future, status auto-reopens to `open`.
-  - Non-quota edits (`message`, `address`, `quota`) on organization-only events (`hero_quota = 0, remain = 0`) never erroneously trigger auto-close.
+- **Quota & Remain Integrity:**
+  - Reducing `hero_quota` below currently active hero reservations (`active_claims`) is rejected with `409 Conflict` (`QUOTA_BELOW_ACTIVE_CLAIMS`).
+  - When `hero_quota` is updated, remaining spots are recalculated as `remain = hero_quota - active_claims`.
+  - `hero_quota` cannot exceed total `quota` (`400 VAL_001`).
+- **No Status Flapping:** Modifying quotas never changes donation status (`open` remains `open` even when `remain = 0`, and `closed` remains `closed` until explicitly reopened via `/reopen`).
 - **Target Category Clearing:** Passing `beneficiary_category_ids: []` clears all targets.
 
 * **Method:** `PATCH`
@@ -333,7 +334,7 @@ Performs a soft delete (`deleted_at = NOW()`) on a donation. Allowed only when `
 ### 3.6 Donation Lifecycle Action Endpoints
 
 #### 3.6.1 Publish Donation
-Transitions a `draft` donation into `open` (or `closed` if `hero_quota > 0 && remain == 0`).
+Transitions a `draft` donation into `open`.
 * **Method:** `POST`
 * **Path:** `/api/v1/donations/:id/publish`
 * **Prerequisites:**

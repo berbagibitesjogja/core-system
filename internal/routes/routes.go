@@ -39,6 +39,9 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	reimbursementHandler := handler.NewReimbursementHandler(routerCfg.Pool, routerCfg.Config)
 	staffHandler := handler.NewStaffHandler(routerCfg.Pool, routerCfg.Config)
 	donationHandler := handler.NewDonationHandler(routerCfg.Pool, routerCfg.Config)
+	heroWarHandler := handler.NewHeroWarHandler(routerCfg.Pool, routerCfg.Config)
+	staffWarHandler := handler.NewStaffWarHandler(routerCfg.Pool, routerCfg.Config)
+	attendanceHandler := handler.NewAttendanceHandler(routerCfg.Pool, routerCfg.Config)
 
 	authMiddleware := middleware.Authenticate(routerCfg.Config.AppConfig.JWTSecret)
 	optionalAuth := middleware.OptionalAuthenticate(routerCfg.Config.AppConfig.JWTSecret)
@@ -50,6 +53,9 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	}
 	operationalOnly := func(h http.Handler) http.Handler {
 		return authMiddleware(middleware.RequireOperationalStaff(routerCfg.Config.AppConfig.DivisionOperational)(h))
+	}
+	coreOnly := func(h http.Handler) http.Handler {
+		return authMiddleware(middleware.RequireCoreStaff(h))
 	}
 
 	// Public Auth Endpoints
@@ -131,6 +137,29 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	mux.Handle("POST /api/v1/donations/{id}/complete", operationalOnly(http.HandlerFunc(donationHandler.CompleteDonationHandler)))
 	mux.Handle("POST /api/v1/donations/{id}/cancel", operationalOnly(http.HandlerFunc(donationHandler.CancelDonationHandler)))
 
+	// Heroes War Endpoints
+	mux.Handle("POST /api/v1/donations/{id}/claim", heroOnly(http.HandlerFunc(heroWarHandler.ClaimDonationHandler)))
+	mux.Handle("POST /api/v1/donations/{id}/cancel-claim", heroOnly(http.HandlerFunc(heroWarHandler.CancelClaimHandler)))
+	mux.Handle("GET /api/v1/heroes/me/reservations", heroOnly(http.HandlerFunc(heroWarHandler.ListReservationsHandler)))
+
+	// Staff War Endpoints
+	mux.Handle("POST /api/v1/donations/{id}/war-slots", operationalOnly(http.HandlerFunc(staffWarHandler.ConfigureWarSlotsHandler)))
+	mux.Handle("GET /api/v1/donations/{id}/war-slots", staffOnly(http.HandlerFunc(staffWarHandler.ListWarSlotsHandler)))
+	mux.Handle("PATCH /api/v1/donations/{id}/war-slots/{slot_id}", operationalOnly(http.HandlerFunc(staffWarHandler.UpdateWarSlotHandler)))
+	mux.Handle("DELETE /api/v1/donations/{id}/war-slots/{slot_id}", operationalOnly(http.HandlerFunc(staffWarHandler.DeleteWarSlotHandler)))
+	mux.Handle("POST /api/v1/donations/{id}/war-slots/{slot_id}/claim", staffOnly(http.HandlerFunc(staffWarHandler.ClaimStaffSlotHandler)))
+	mux.Handle("POST /api/v1/donations/{id}/war-slots/{slot_id}/cancel", staffOnly(http.HandlerFunc(staffWarHandler.CancelStaffSlotHandler)))
+	mux.Handle("POST /api/v1/donations/{id}/war-slots/{slot_id}/check-in", staffOnly(http.HandlerFunc(staffWarHandler.StaffSelfCheckInHandler)))
+
+	// Attendance Tracking & Ban Overrides Endpoints
+	mux.Handle("GET /api/v1/donations/{id}/attendances", operationalOnly(http.HandlerFunc(attendanceHandler.ListHeroAttendancesHandler)))
+	mux.Handle("POST /api/v1/donations/{id}/attendances/{attendance_id}", operationalOnly(http.HandlerFunc(attendanceHandler.MarkHeroAttendanceHandler)))
+	mux.Handle("GET /api/v1/donations/{id}/war-slots/{slot_id}/attendances", coreOnly(http.HandlerFunc(attendanceHandler.ListStaffAttendancesHandler)))
+	mux.Handle("POST /api/v1/donations/{id}/war-slots/{slot_id}/attendances/{staff_attendance_id}", coreOnly(http.HandlerFunc(attendanceHandler.MarkStaffAttendanceHandler)))
+	mux.Handle("GET /api/v1/users/{id}/bans", coreOnly(http.HandlerFunc(attendanceHandler.ListUserBansHandler)))
+	mux.Handle("POST /api/v1/users/{id}/bans", coreOnly(http.HandlerFunc(attendanceHandler.CreateManualBanHandler)))
+	mux.Handle("POST /api/v1/bans/{id}/lift", coreOnly(http.HandlerFunc(attendanceHandler.LiftBanHandler)))
+
 	rateLimit := routerCfg.Config.AppConfig.RateLimit
 	corsMiddleware := middleware.CORSWithConfig(routerCfg.Config.AppConfig.CORSOrigins, routerCfg.Config.AppConfig.CORSMaxAge)
 
@@ -157,6 +186,6 @@ func HealthCheckHandler(pool *pgxpool.Pool) http.HandlerFunc {
 func APIv1Handler(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]string{
 		"message": "Berbagi Bites Jogja API v1",
-		"version": "0.8.1",
+		"version": "0.9.0",
 	})
 }

@@ -1,0 +1,115 @@
+info:
+  name: Mark Staff Attendance
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{base_url}}/donations/:donationId/war-slots/:slotId/attendances/:staffAttendanceId"
+  params:
+    - name: staffAttendanceId
+      value: "1"
+      type: path
+    - name: slotId
+      value: "1"
+      type: path
+    - name: donationId
+      value: 00000000-0000-0000-0000-000000002002
+      type: path
+  body:
+    type: json
+    data: |-
+      {
+        "status": "attended",
+        "notes": "Verified present and completed shift"
+      }
+
+      // {
+      //   status: attended, absent
+      //   notes?: string
+      // }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: 200 Attended
+    request:
+      url: "{{base_url}}/donations/1f7f017a-70d2-42d1-8657-19563041b95b/war-slots/104/attendances/115"
+      method: POST
+      body:
+        type: json
+        data: |-
+          {
+            "status": "attended",
+            "notes": "Verified present and completed shift"
+          }
+    response:
+      status: 200
+      statusText: OK
+      headers:
+        - name: content-type
+          value: application/json; charset=utf-8
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "Staff attendance marked successfully",
+            "data": {
+              "id": 115,
+              "war_slot_id": 104,
+              "staff_id": "00000000-0000-0000-0000-000000000007",
+              "status": "attended",
+              "cancelled_late": false,
+              "cancelled_at": null,
+              "attended_at": "2026-11-13T07:44:00.000000+07:00",
+              "marked_by": "00000000-0000-0000-0000-000000000006",
+              "checkin_source": "coordinator",
+              "notes": "Verified present and completed shift",
+              "created_at": "2026-11-13T07:42:04.864884+07:00",
+              "updated_at": "2026-11-13T07:44:00.000000+07:00"
+            }
+          }
+  - name: 200 Absent (Banned)
+    request:
+      url: "{{base_url}}/donations/1f7f017a-70d2-42d1-8657-19563041b95b/war-slots/104/attendances/115"
+      method: POST
+      body:
+        type: json
+        data: |-
+          {
+            "status": "absent",
+            "notes": "Staff did not show up for assigned shift"
+          }
+    response:
+      status: 200
+      statusText: OK
+      headers:
+        - name: content-type
+          value: application/json; charset=utf-8
+      body:
+        type: json
+        data: |-
+          {
+            "status": "success",
+            "message": "Staff attendance marked successfully",
+            "data": {
+              "id": 115,
+              "war_slot_id": 104,
+              "staff_id": "00000000-0000-0000-0000-000000000007",
+              "status": "absent",
+              "cancelled_late": false,
+              "cancelled_at": null,
+              "attended_at": null,
+              "marked_by": "00000000-0000-0000-0000-000000000006",
+              "checkin_source": "coordinator",
+              "notes": "Staff did not show up for assigned shift",
+              "created_at": "2026-11-13T07:42:04.864884+07:00",
+              "updated_at": "2026-11-13T07:44:00.000000+07:00"
+            }
+          }

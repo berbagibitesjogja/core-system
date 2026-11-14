@@ -1708,11 +1708,9 @@ func TestUpdateDonationHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("Quota invariant: reducing hero_quota drops remain below zero (400 VAL_001)", func(t *testing.T) {
-		// quota=20, hero_quota=10, remain=2 (meaning 8 spots were reserved)
-		dID := createDonation("open", 20, 10, 2, uniCatID)
-		// Try to set hero_quota=5 (delta = 5 - 10 = -5 => new remain = 2 - 5 = -3 < 0)
-		req := httptest.NewRequest(http.MethodPatch, "/api/v1/donations/"+dID.String(), strings.NewReader(`{"hero_quota": 5}`))
+	t.Run("Quota invariant: negative hero_quota returns 400 VAL_001", func(t *testing.T) {
+		dID := createDonation("open", 20, 10, 10, uniCatID)
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/donations/"+dID.String(), strings.NewReader(`{"hero_quota": -1}`))
 		req.SetPathValue("id", dID.String())
 		req = setStaffAuth(req)
 		rec := httptest.NewRecorder()
@@ -1729,39 +1727,42 @@ func TestUpdateDonationHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("Auto-Close: reducing hero_quota to reach remain = 0 switches open to closed", func(t *testing.T) {
-		// quota=20, hero_quota=10, remain=3
-		dID := createDonation("open", 20, 10, 3, uniCatID)
-		// Set hero_quota=7 (delta = 7 - 10 = -3 => new remain = 0)
-		req := httptest.NewRequest(http.MethodPatch, "/api/v1/donations/"+dID.String(), strings.NewReader(`{"hero_quota": 7}`))
+	t.Run("Quota invariant: reducing hero_quota below active claims returns 409 QUOTA_BELOW_ACTIVE_CLAIMS", func(t *testing.T) {
+		dID := createDonation("open", 20, 10, 8, uniCatID)
+		hero1 := createTestUserForAttendance(t, pool, fmt.Sprintf("hero_q1_%s@example.com", uuid.NewString()[:8]), "Hero Q1")
+		hero2 := createTestUserForAttendance(t, pool, fmt.Sprintf("hero_q2_%s@example.com", uuid.NewString()[:8]), "Hero Q2")
+		_, _ = pool.Exec(context.Background(), "INSERT INTO heroes (user_id) VALUES ($1), ($2)", hero1, hero2)
+		_, err := pool.Exec(context.Background(), `
+			INSERT INTO hero_attendances (donation_id, hero_id, status)
+			VALUES ($1, $2, 'registered'), ($1, $3, 'registered')
+		`, dID, hero1, hero2)
+		if err != nil {
+			t.Fatalf("failed to insert hero attendances: %v", err)
+		}
+		defer func() {
+			_, _ = pool.Exec(context.Background(), "DELETE FROM hero_attendances WHERE donation_id = $1", dID)
+		}()
+
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/donations/"+dID.String(), strings.NewReader(`{"hero_quota": 1}`))
 		req.SetPathValue("id", dID.String())
 		req = setStaffAuth(req)
 		rec := httptest.NewRecorder()
 
 		h.UpdateDonationHandler(rec, req)
 
-		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200 OK, got %d. Body: %s", rec.Code, rec.Body.String())
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("expected 409 Conflict, got %d. Body: %s", rec.Code, rec.Body.String())
 		}
 		var resp response.Response
 		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-		dataBytes, _ := json.Marshal(resp.Data)
-		var donationResp DonationStaffResponse
-		_ = json.Unmarshal(dataBytes, &donationResp)
-
-		if donationResp.Status != "closed" {
-			t.Errorf("expected status 'closed', got '%s'", donationResp.Status)
-		}
-		if donationResp.Remain != 0 {
-			t.Errorf("expected remain 0, got %d", donationResp.Remain)
+		if resp.Code != "QUOTA_BELOW_ACTIVE_CLAIMS" {
+			t.Errorf("expected QUOTA_BELOW_ACTIVE_CLAIMS, got %s", resp.Code)
 		}
 	})
 
-	t.Run("Auto-Reopen: increasing hero_quota switches closed to open", func(t *testing.T) {
-		// quota=20, hero_quota=10, remain=0, status=closed
-		dID := createDonation("closed", 20, 10, 0, uniCatID)
-		// Set hero_quota=15 (delta = 15 - 10 = +5 => new remain = 5)
-		req := httptest.NewRequest(http.MethodPatch, "/api/v1/donations/"+dID.String(), strings.NewReader(`{"hero_quota": 15}`))
+	t.Run("No status flapping: reducing hero_quota to reach remain = 0 keeps status open", func(t *testing.T) {
+		dID := createDonation("open", 20, 10, 10, uniCatID)
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/donations/"+dID.String(), strings.NewReader(`{"hero_quota": 0}`))
 		req.SetPathValue("id", dID.String())
 		req = setStaffAuth(req)
 		rec := httptest.NewRecorder()
@@ -1780,8 +1781,34 @@ func TestUpdateDonationHandler(t *testing.T) {
 		if donationResp.Status != "open" {
 			t.Errorf("expected status 'open', got '%s'", donationResp.Status)
 		}
-		if donationResp.Remain != 5 {
-			t.Errorf("expected remain 5, got %d", donationResp.Remain)
+		if donationResp.Remain != 0 {
+			t.Errorf("expected remain 0, got %d", donationResp.Remain)
+		}
+	})
+
+	t.Run("No status flapping: increasing hero_quota on closed donation keeps status closed", func(t *testing.T) {
+		dID := createDonation("closed", 20, 10, 0, uniCatID)
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/donations/"+dID.String(), strings.NewReader(`{"hero_quota": 15}`))
+		req.SetPathValue("id", dID.String())
+		req = setStaffAuth(req)
+		rec := httptest.NewRecorder()
+
+		h.UpdateDonationHandler(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d. Body: %s", rec.Code, rec.Body.String())
+		}
+		var resp response.Response
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		dataBytes, _ := json.Marshal(resp.Data)
+		var donationResp DonationStaffResponse
+		_ = json.Unmarshal(dataBytes, &donationResp)
+
+		if donationResp.Status != "closed" {
+			t.Errorf("expected status 'closed', got '%s'", donationResp.Status)
+		}
+		if donationResp.Remain != 15 {
+			t.Errorf("expected remain 15, got %d", donationResp.Remain)
 		}
 	})
 
@@ -2084,7 +2111,7 @@ func TestDonationLifecycleActions(t *testing.T) {
 		}
 	})
 
-	t.Run("Publish: Draft with remain == 0 and hero_quota > 0 transitions to closed", func(t *testing.T) {
+	t.Run("Publish: Draft with remain == 0 and hero_quota > 0 transitions to open (no auto-close)", func(t *testing.T) {
 		dID := createDonation("draft", futureTime, 20, 10, 0, true, &uniCatID)
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/donations/"+dID.String()+"/publish", nil)
 		req.SetPathValue("id", dID.String())
@@ -2098,8 +2125,8 @@ func TestDonationLifecycleActions(t *testing.T) {
 
 		var dbStatus string
 		_ = pool.QueryRow(context.Background(), "SELECT status FROM donations WHERE id = $1", dID).Scan(&dbStatus)
-		if dbStatus != "closed" {
-			t.Errorf("expected db status closed, got %s", dbStatus)
+		if dbStatus != "open" {
+			t.Errorf("expected db status open, got %s", dbStatus)
 		}
 	})
 
@@ -2750,8 +2777,8 @@ func TestPhase2CorrectnessAndDomainStateMachine(t *testing.T) {
 		if staffResp.Status != "closed" {
 			t.Errorf("expected past event to remain 'closed' despite quota increase, got '%s'", staffResp.Status)
 		}
-		if staffResp.Remain != 5 {
-			t.Errorf("expected remain = 5, got %d", staffResp.Remain)
+		if staffResp.Remain != 15 {
+			t.Errorf("expected remain = 15, got %d", staffResp.Remain)
 		}
 	})
 

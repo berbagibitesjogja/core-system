@@ -36,3 +36,8 @@ LIMIT $1 OFFSET $2;
 SELECT COUNT(*)
 FROM food_items
 WHERE (sqlc.narg('search')::text IS NULL OR name ILIKE '%' || sqlc.narg('search') || '%');
+
+-- name: CountFoodItemsByIDs :one
+SELECT COUNT(*)
+FROM food_items
+WHERE id = ANY($1::int[]);

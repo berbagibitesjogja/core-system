@@ -85,6 +85,26 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 	return i, err
 }
 
+const getUserBanTargetProfiles = `-- name: GetUserBanTargetProfiles :one
+SELECT
+    EXISTS(SELECT 1 FROM users WHERE id = $1 AND deleted_at IS NULL)::bool AS user_exists,
+    EXISTS(SELECT 1 FROM heroes WHERE user_id = $1)::bool AS is_hero,
+    EXISTS(SELECT 1 FROM staff WHERE user_id = $1 AND deleted_at IS NULL)::bool AS is_staff
+`
+
+type GetUserBanTargetProfilesRow struct {
+	UserExists bool
+	IsHero     bool
+	IsStaff    bool
+}
+
+func (q *Queries) GetUserBanTargetProfiles(ctx context.Context, id uuid.UUID) (GetUserBanTargetProfilesRow, error) {
+	row := q.db.QueryRow(ctx, getUserBanTargetProfiles, id)
+	var i GetUserBanTargetProfilesRow
+	err := row.Scan(&i.UserExists, &i.IsHero, &i.IsStaff)
+	return i, err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, email, name, password_hash, phone_number, profile_pic, pfp_external_url, bio, address, is_active, email_verified_at, created_at, updated_at, deleted_at
 FROM users
@@ -274,4 +294,18 @@ WHERE id = $1 AND deleted_at IS NULL
 func (q *Queries) MarkEmailVerified(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, markEmailVerified, id)
 	return err
+}
+
+const userExists = `-- name: UserExists :one
+SELECT EXISTS(
+    SELECT 1 FROM users
+    WHERE id = $1 AND deleted_at IS NULL
+)::bool
+`
+
+func (q *Queries) UserExists(ctx context.Context, id uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, userExists, id)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
 }
