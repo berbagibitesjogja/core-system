@@ -71,6 +71,7 @@ func TestActorBoundariesInRoutes(t *testing.T) {
 		method string
 		path   string
 	}{
+		{http.MethodGet, "/api/v1/divisions"},
 		{http.MethodPost, "/api/v1/invitations"},
 		{http.MethodPost, "/api/v1/sponsors"},
 		{http.MethodPatch, "/api/v1/sponsors/00000000-0000-0000-0000-000000000001"},

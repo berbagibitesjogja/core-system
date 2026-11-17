@@ -38,6 +38,7 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	beneficiaryCategoryHandler := handler.NewBeneficiaryCategoryHandler(routerCfg.Pool, routerCfg.Config)
 	reimbursementHandler := handler.NewReimbursementHandler(routerCfg.Pool, routerCfg.Config)
 	staffHandler := handler.NewStaffHandler(routerCfg.Pool, routerCfg.Config)
+	divisionHandler := handler.NewDivisionHandler(routerCfg.Pool, routerCfg.Config)
 	donationHandler := handler.NewDonationHandler(routerCfg.Pool, routerCfg.Config)
 	heroWarHandler := handler.NewHeroWarHandler(routerCfg.Pool, routerCfg.Config)
 	staffWarHandler := handler.NewStaffWarHandler(routerCfg.Pool, routerCfg.Config)
@@ -94,6 +95,9 @@ func NewRouter(routerCfg RouterConfig) http.Handler {
 	mux.Handle("DELETE /api/v1/staff/me", staffOnly(http.HandlerFunc(staffHandler.ResignStaffHandler)))
 	mux.Handle("PATCH /api/v1/staff/{id}", staffOnly(http.HandlerFunc(staffHandler.UpdateStaffHandler)))
 	mux.Handle("DELETE /api/v1/staff/{id}", staffOnly(http.HandlerFunc(staffHandler.KickStaffHandler)))
+
+	// Division Endpoints
+	mux.Handle("GET /api/v1/divisions", staffOnly(http.HandlerFunc(divisionHandler.ListDivisionsHandler)))
 
 	// Sponsor Endpoints
 	mux.Handle("GET /api/v1/sponsors", optionalAuth(http.HandlerFunc(sponsorHandler.ListSponsorsHandler)))
@@ -186,6 +190,6 @@ func HealthCheckHandler(pool *pgxpool.Pool) http.HandlerFunc {
 func APIv1Handler(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]string{
 		"message": "Berbagi Bites Jogja API v1",
-		"version": "0.9.0",
+		"version": "0.9.1",
 	})
 }

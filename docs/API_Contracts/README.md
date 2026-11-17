@@ -9,6 +9,7 @@ This directory contains the official API specifications, data models, role guard
 | **Authentication** | [`Auth.md`](./Auth.md) | Local staff login, refresh token rotation, logout, and self session management |
 | **Google OAuth** | [`GoogleOAuth.md`](./GoogleOAuth.md) | Single sign-on for Berbagi Bites Jogja staff and Google identity linking |
 | **Staff & Roles** | [`Staff.md`](./Staff.md) | Staff directory, role promotion/demotion matrix, division transfers, and kick/resign governance |
+| **Divisions** | [`Divisions.md`](./Divisions.md) | Organizational divisions reference lookup for staff filters, transfers, and war-slot configuration |
 | **Heroes & Volunteers** | [`Heroes.md`](./Heroes.md) | Hero beneficiary registration, university email auto-enrollment, profile, and category assignments |
 | **Beneficiary Categories**| [`BeneficiaryCategories.md`](./BeneficiaryCategories.md) | Management of beneficiary criteria, university domain associations, and public visibility |
 | **Sponsors** | [`Sponsors.md`](./Sponsors.md) | Sponsor directory, tiers, and logo management |
