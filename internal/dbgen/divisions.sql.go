@@ -35,3 +35,35 @@ func (q *Queries) GetDivisionByID(ctx context.Context, id int32) (GetDivisionByI
 	)
 	return i, err
 }
+
+const listDivisions = `-- name: ListDivisions :many
+SELECT id, name
+FROM divisions
+WHERE deleted_at IS NULL
+ORDER BY id ASC
+`
+
+type ListDivisionsRow struct {
+	ID   int32
+	Name string
+}
+
+func (q *Queries) ListDivisions(ctx context.Context) ([]ListDivisionsRow, error) {
+	rows, err := q.db.Query(ctx, listDivisions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDivisionsRow
+	for rows.Next() {
+		var i ListDivisionsRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
